@@ -32,8 +32,6 @@ class BinaryDataset(torch.utils.data.Dataset):
         ])
     }
 
-    code: 
-
     Note: Going through this in mode='random-chunks' does NOT guarantee that you see each data 
         point once.
     """
