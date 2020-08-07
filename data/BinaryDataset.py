@@ -18,7 +18,21 @@ class BinaryDataset(torch.utils.data.Dataset):
     """
     Dataset of compiled binaries.
     
-    returns pairs of (code, f_start) sequences
+    Returns dict: 
+    {
+        'X': array([ 
+            76,   0,   0,   0,   1,  69,   4, 141,  78, 207, 137,   1, 224,
+            ...
+            224,  14, 232,   0,   0,  20,  35,  61, 141,  72, 195,  92
+            ], dtype=uint8), 
+       'y': array([
+            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+            ...
+            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
+        ])
+    }
+
+    code: 
 
     Note: Going through this in mode='random-chunks' does NOT guarantee that you see each data 
         point once.
