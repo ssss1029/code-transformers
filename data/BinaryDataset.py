@@ -55,20 +55,30 @@ class BinaryDataset(torch.utils.data.Dataset):
         else:
             raise NotImplementedError(f"Targets {targets} not recognized")
         
-        print("Loading Binaries")
         self.binaries = load_binaries(
             binary_filenames=glob.glob(root_dir), 
             binary_format=self.binary_format, 
             chunk_length=self.chunk_length, 
             reverse=self.reverse
         )
-        print(f"Finished loading {len(self.binaries)} binaries")
+
+        self.num_functions = 0
+        for _, boundaries, _ in self.binaries:
+            self.num_functions += boundaries.shape[0]
 
     def __len__(self):
-        raise NotImplementedError()
-
-    def __getitem__(self, idx):
+        """
+        TODO: This len() is just the number of functions in the dataset. One epoch through the dataset would not
+            ensure that one goes through all the functions/chunks. This depends on self.mode alot.
+        """
         if self.mode == 'random-chunks':
+            return self.num_functions
+        else:
+            raise NotImplementedError()
+
+    def __getitem__(self, i):
+        if self.mode == 'random-chunks':
+            # Note this is independent of the arg i passed in
             # Pick a random binary
             random_binary = random.choice(self.binaries)
             text_length = len(random_binary[0])
