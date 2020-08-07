@@ -1,0 +1,3 @@
+{'FILENAME': 'train.py',
+ 'dataroot': '/var/tmp/sauravkadavath/binary/byteweight/elf_32/1/binary',
+ 'savedir': 'checkpoints/TEMP/'}
