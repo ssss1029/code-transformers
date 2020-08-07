@@ -1,4 +1,24 @@
 
+"""
+
+Binary dataloading. Example usage: 
+
+This loads binaries from one dir
+python3 train.py \
+    --savedir=checkpoints/TEMP/ \
+    --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/*
+
+This loads binaries from several dirs
+python3 train.py \
+    --savedir=checkpoints/TEMP/ \
+    --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*
+
+This loads binaries from _even more_ dirs
+python3 train.py \
+    --savedir=checkpoints/TEMP/ \
+    --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/* \
+    --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_32/*/binary/*
+"""
 
 import numpy as np
 import os
@@ -13,7 +33,7 @@ from tqdm import tqdm
 from data.BinaryDataset import BinaryDataset
 
 parser = argparse.ArgumentParser(description='Code Transformer', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--dataroot', type=str)
+parser.add_argument('--dataroot', type=str, action='append')
 parser.add_argument('--savedir', type=str)
 
 args = parser.parse_args()
@@ -48,12 +68,15 @@ def prologue():
 
 def main():
     
-    dataset = BinaryDataset(
-        root_dir=args.dataroot,
-        binary_format='elf'
-    )
+    all_datasets = []
+    for dataroot in args.dataroot:
+        curr_dataset = BinaryDataset(
+            root_dir=dataroot,
+            binary_format='elf'
+        )
+        all_datasets.append(curr_dataset)
 
-    print(dataset[0])
+    print(all_datasets[0][0])
 
 
 if __name__ == "__main__":
