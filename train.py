@@ -33,7 +33,7 @@ from tqdm import tqdm
 from data.BinaryDataset import BinaryDataset
 
 parser = argparse.ArgumentParser(description='Code Transformer', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--dataroot', type=str, action='append')
+parser.add_argument('--dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
 parser.add_argument('--savedir', type=str)
 
 args = parser.parse_args()
@@ -77,6 +77,9 @@ def main():
         all_datasets.append(curr_dataset)
 
     print(all_datasets[0][0])
+
+    # TODO: ConcatDataset. This requires the __len__() to be implemented.
+    # dataset = torch.utils.data.ConcatDataset(all_datasets)
 
 
 if __name__ == "__main__":
