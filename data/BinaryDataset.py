@@ -10,6 +10,7 @@ import numpy as np
 
 import bisect
 import glob
+import logging
 import os
 import random
 import torch
@@ -57,7 +58,7 @@ class BinaryDataset(torch.utils.data.Dataset):
         
         self.binaries = load_binaries(
             binary_filenames=glob.glob(root_dir), 
-            binary_format=self.binary_format, 
+            #binary_format=self.binary_format, 
             chunk_length=self.chunk_length, 
             reverse=self.reverse
         )
@@ -116,19 +117,30 @@ class BinaryDataset(torch.utils.data.Dataset):
 
         return {'X': torch.tensor(X), 'y': torch.tensor(y)}
 
-def load_binaries(binary_filenames, binary_format, chunk_length, reverse=True):
+def load_binaries(binary_filenames, binary_format=None, chunk_length=1000, reverse=True):
     """
     Returns the binaries as a list: 
     List [(text:bytes, boundaries:np.array(num_functions, 2), filename:str)]
     """
 
-    bin_helper = { 'pe': pe_helper, 'elf': elf_helper }[binary_format]
-
+    bin_helper = { 'pe': pe_helper, 'elf': elf_helper }#[binary_format]
+    if binary_format is not None:
+         bin_helper = bin_helpers[binary_format]
+            
     binaries = []
     for fn in binary_filenames:
+        # Assumes "elf" or "pe" is in the path name
+        # Maybe can be better optimized
+        if binary_format is None:
+            if "elf" in fn:
+                bin_helper = bin_helpers["elf"]
+            elif "pe" in fn:
+                bin_helper = bin_helpers["pe"]
+            else:
+                logging.warning("unknown binary type")
         binary = bin_helper.open_binary(fn)
         if binary == None:
-            print(f"WARNING: Unable to open binary {fn}. Skipping this file.")
+            logging.warning("WARNING: Unable to open binary {fn}. Skipping this file.")
             continue
         
         # text: bytes, text_offset: int
