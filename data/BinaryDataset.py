@@ -123,7 +123,7 @@ def load_binaries(binary_filenames, binary_format=None, chunk_length=1000, rever
     List [(text:bytes, boundaries:np.array(num_functions, 2), filename:str)]
     """
 
-    bin_helper = { 'pe': pe_helper, 'elf': elf_helper }#[binary_format]
+    bin_helpers = { 'pe': pe_helper, 'elf': elf_helper }#[binary_format]
     if binary_format is not None:
          bin_helper = bin_helpers[binary_format]
             
@@ -140,7 +140,7 @@ def load_binaries(binary_filenames, binary_format=None, chunk_length=1000, rever
                 logging.warning("unknown binary type")
         binary = bin_helper.open_binary(fn)
         if binary == None:
-            logging.warning("WARNING: Unable to open binary {fn}. Skipping this file.")
+            logging.warning(f"Unable to open binary {fn}. Skipping this file.")
             continue
         
         # text: bytes, text_offset: int
