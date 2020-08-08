@@ -17,6 +17,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from data.BinaryDataset import BinaryDataset
+from utils.evaluation import calc_f1
 
 from transformers import BertConfig, BertForTokenClassification, BertTokenizer
 
