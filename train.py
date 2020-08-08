@@ -1,7 +1,7 @@
 
 """
 
-Transformer for Function ID tasks
+Transformers for Binary Analysis
 
 """
 
@@ -19,8 +19,11 @@ from data.BinaryDataset import BinaryDataset
 
 from transformers import BertConfig, BertForTokenClassification, BertTokenizer
 
+import sklearn
+
 parser = argparse.ArgumentParser(description='Code Transformer', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
+parser.add_argument('--targets', type=str, choices=['start', 'end', 'both'], default='start')
 parser.add_argument('--savedir', type=str)
 
 # Model settings
@@ -77,7 +80,7 @@ def main():
         curr_dataset = BinaryDataset(
             root_dir=dataroot,
             binary_format='elf',
-            targets='start', 
+            targets=args.targets, 
             mode='random-chunks', 
             chunk_length=args.sequence_len
         )
@@ -96,6 +99,16 @@ def main():
     ## Model
     ####################################################################
 
+    if args.targets == 'start':
+        softmax_dim = 2
+    elif args.targets == 'end':
+        softmax_dim = 2 
+    elif args.target == 'both':
+        # TODO: Make sure if this really is 4 or if it is only 3 in practice
+        softmax_dim = 4
+    else:
+        raise NotImplementedError()
+
     config = BertConfig(
         vocab_size=256, 
         hidden_size=args.hidden_size, 
@@ -110,7 +123,8 @@ def main():
         initializer_range=0.02, 
         layer_norm_eps=1e-12, 
         pad_token_id=0, 
-        gradient_checkpointing=False
+        gradient_checkpointing=False,
+        num_labels=softmax_dim
     )
 
     model = BertForTokenClassification(config=config).cuda()
@@ -121,17 +135,47 @@ def main():
 
     print("Beginning training")
     for epoch in range(args.epochs):
-        train_loss, train_acc = train(
+        train_loss = train(
             model, lossfn, optimizer, dataloader, epoch
         )
 
-        print(f"Train Loss: {train_loss} | Test Loss: {test_loss} | Test Acc: {test_acc}")
+        print(f"Train Loss: {train_loss}")
         
         # torch.save(
         #     model.state_dict(),
         #     os.path.join(save_dir, "model.pth")
         # )
 
+        # TODO: Save results and model
+
+
+def calc_f1(logits, labels):
+    """
+    F1 Score 
+
+    logits: (batch_size, N, sequence_length), N is the sofmax dimension
+    labels: (batch_size, sequence_length)
+    """
+
+    pred_vales = torch.max(logits, dim=1)[1] # (batch_size, sequence_len)
+
+    if args.targets == 'both':
+        pass
+    elif args.targets == 'start':
+        # labels will be either 0 or 1
+        flat_pred_values = torch.flatten(pred_vales)
+        flat_labels = torch.flatten(labels)
+    elif args.targets == 'end':
+        # labels will be either 0 or 1
+        flat_pred_values = torch.flatten(pred_vales)
+        flat_labels = torch.flatten(labels)
+    else:
+        raise NotImplementedError()
+
+    return sklearn.metrics.f1_score(
+        y_true=flat_labels,
+        y_pred=flat_pred_values
+    )
 
 
 def train(model, lossfn, optimizer, dataloader, epoch):
@@ -165,6 +209,10 @@ def train(model, lossfn, optimizer, dataloader, epoch):
 
         # Bookkeeping
         losses.update(loss.item(), sequences.size(0))
+        
+        # TODO: Maybe keep track of a moving average of F1 during training?
+        # f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
+        # print(f1_curr)
 
         # measure elapsed time
         batch_time.update(time.time() - end)
