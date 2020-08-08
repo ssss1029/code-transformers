@@ -126,6 +126,8 @@ def main():
         raise NotImplementedError()
 
     # Define model
+    # For now, embedding dimension = hidden dimension
+
     gru = torch.nn.GRU(
         input_size=args.hidden_size,
         hidden_size=args.hidden_size,
