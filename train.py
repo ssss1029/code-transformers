@@ -8,6 +8,7 @@ Transformers for Binary Analysis
 import numpy as np
 import os
 import argparse
+import logging
 import pprint
 import time
 import torch
@@ -149,35 +150,6 @@ def main():
         # TODO: Save results and model
 
 
-def calc_f1(logits, labels):
-    """
-    F1 Score 
-
-    logits: (batch_size, N, sequence_length), N is the sofmax dimension
-    labels: (batch_size, sequence_length)
-    """
-
-    pred_vales = torch.max(logits, dim=1)[1] # (batch_size, sequence_len)
-
-    if args.targets == 'both':
-        pass
-    elif args.targets == 'start':
-        # labels will be either 0 or 1
-        flat_pred_values = torch.flatten(pred_vales)
-        flat_labels = torch.flatten(labels)
-    elif args.targets == 'end':
-        # labels will be either 0 or 1
-        flat_pred_values = torch.flatten(pred_vales)
-        flat_labels = torch.flatten(labels)
-    else:
-        raise NotImplementedError()
-
-    return sklearn.metrics.f1_score(
-        y_true=flat_labels,
-        y_pred=flat_pred_values
-    )
-
-
 def train(model, lossfn, optimizer, dataloader, epoch):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
@@ -209,10 +181,14 @@ def train(model, lossfn, optimizer, dataloader, epoch):
 
         # Bookkeeping
         losses.update(loss.item(), sequences.size(0))
-        
+
         # TODO: Maybe keep track of a moving average of F1 during training?
-        # f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
-        # print(f1_curr)
+        # if args.target == 'start' or args.target == 'end':
+        #     f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
+        #     logging.info(f1_curr)
+        # else:
+        #     # TODO: Implement F1 for 'both' targets
+        #     pass
 
         # measure elapsed time
         batch_time.update(time.time() - end)
