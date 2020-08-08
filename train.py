@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 from data.BinaryDataset import BinaryDataset
 from utils.evaluation import calc_f1
+from models.rnn import RNN
 
 from transformers import BertConfig, BertForTokenClassification, BertTokenizer
 
@@ -33,6 +34,7 @@ parser.add_argument('--arch', choices=['gru', 'bert'], required=True)
 parser.add_argument('--sequence-len', type=int, default=1024, help='Length of sequence fed into transformer')
 parser.add_argument('--hidden-size', type=int, default=16)
 parser.add_argument('--num-layers', type=int, default=2)
+parser.add_argument('--num-attn-heads', type=int, default=8) # Only for BERT
 
 # Opt settings
 parser.add_argument('--lr', type=float, default=1e-5)
@@ -70,23 +72,6 @@ def prologue():
         to_print = vars(args)
         to_print['FILENAME'] = __file__
         pprint.pprint(to_print, stream=f)
-
-
-class RNN(nn.Module):
-    def __init__(self, rnn, embedder, output_size):
-        super(RNN, self).__init__()
-        self.rnn = rnn
-        self.embedder = embedder
-        self.output_size = output_size
-
-        # Project hidden states onto sofmax dimension
-        # 2 * hidden_size since bidirectional RNNs concat each direction for the final output
-        self.proj = nn.Linear(2 * self.rnn.hidden_size, self.output_size)
-    
-    def forward(self, x):
-        x = self.embedder(x)
-        x, _ = self.rnn(x)
-        return self.proj(x)
 
 
 def main():
@@ -154,7 +139,7 @@ def main():
         config = BertConfig(
             vocab_size=256, 
             hidden_size=args.hidden_size, 
-            num_hidden_layers=args.hidden_layers, 
+            num_hidden_layers=args.num_layers, 
             num_attention_heads=args.num_attn_heads, 
             intermediate_size=args.hidden_size * 4, # BERT originally uses 4x hidden size for this, so copying that. 
             hidden_act='gelu', 
