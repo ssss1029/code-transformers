@@ -29,6 +29,7 @@ parser.add_argument('--targets', type=str, choices=['start', 'end', 'both'], def
 parser.add_argument('--savedir', type=str)
 
 # Model settings
+parser.add_argument('--arch', choices=['gru', 'bert'], required=True)
 parser.add_argument('--sequence-len', type=int, default=1024, help='Length of sequence fed into transformer')
 parser.add_argument('--hidden-size', type=int, default=16)
 parser.add_argument('--num-layers', type=int, default=2)
@@ -129,25 +130,49 @@ def main():
     # Define model
     # For now, embedding dimension = hidden dimension
 
-    gru = torch.nn.GRU(
-        input_size=args.hidden_size,
-        hidden_size=args.hidden_size,
-        num_layers=args.num_layers,
-        bias=True,
-        batch_first=True,
-        bidirectional=True
-    )
+    if args.arch == 'gru':
+        gru = torch.nn.GRU(
+            input_size=args.hidden_size,
+            hidden_size=args.hidden_size,
+            num_layers=args.num_layers,
+            bias=True,
+            batch_first=True,
+            bidirectional=True
+        )
 
-    embedder = torch.nn.Embedding(
-        num_embeddings=256,
-        embedding_dim=args.hidden_size
-    )
+        embedder = torch.nn.Embedding(
+            num_embeddings=256,
+            embedding_dim=args.hidden_size
+        )
 
-    model = RNN(
-        rnn=gru, 
-        embedder=embedder,
-        output_size=softmax_dim
-    ).cuda()
+        model = RNN(
+            rnn=gru, 
+            embedder=embedder,
+            output_size=softmax_dim
+        ).cuda()
+    elif args.arch == 'bert':
+        config = BertConfig(
+            vocab_size=256, 
+            hidden_size=args.hidden_size, 
+            num_hidden_layers=args.hidden_layers, 
+            num_attention_heads=args.num_attn_heads, 
+            intermediate_size=args.hidden_size * 4, # BERT originally uses 4x hidden size for this, so copying that. 
+            hidden_act='gelu', 
+            hidden_dropout_prob=0.1, 
+            attention_probs_dropout_prob=0.1, 
+            max_position_embeddings=args.sequence_len, # Sequence length max 
+            type_vocab_size=1, 
+            initializer_range=0.02, 
+            layer_norm_eps=1e-12, 
+            pad_token_id=0, 
+            gradient_checkpointing=False,
+            num_labels=softmax_dim
+        )
+
+        model = BertForTokenClassification(config=config).cuda()
+    else:
+        raise NotImplementedError()
+
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     lossfn = torch.nn.CrossEntropyLoss()
@@ -189,7 +214,12 @@ def train(model, lossfn, optimizer, dataloader, epoch):
 
         # Forward
         optimizer.zero_grad()
-        logits = model(sequences)
+        if args.arch == 'gru':
+            logits = model(sequences)
+        elif args.arch == 'bert':
+            logits = model(sequences)[0]
+        else:
+            raise NotImplementedError()
         logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
         loss = lossfn(logits, labels)
 
