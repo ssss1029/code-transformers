@@ -1,7 +1,7 @@
 # Transformers for Binary Analysis
 
 
-Currently, `train.py` ony supports ELF binaries. 
+Currently, `train.py` only supports ELF binaries. 
 
 This loads binaries from one dir
 ```
