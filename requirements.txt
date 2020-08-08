@@ -1,0 +1,3 @@
+pefile
+transformers
+pyelftools
