@@ -40,6 +40,7 @@ parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
 parser.add_argument('--epochs', type=int, default=10)
+parser.add_argument('--grad-acc-steps', type=int, default=1, help="Number of backward()s to call before calling one step()")
 
 # MLM settings
 parser.add_argument('--mask-frac', type=float, default=0.15, help="Fraction of tokens to mask out before doing MLM")
@@ -166,6 +167,7 @@ def train(model, optimizer, dataloader, epoch):
 
     model.train()
     end = time.time()
+    optimizer.zero_grad()
     for i, batch in enumerate(dataloader):
         # measure data loading time
         data_time.update(time.time() - end)
@@ -177,18 +179,21 @@ def train(model, optimizer, dataloader, epoch):
         masked_sequences = (mask * sequences) + ((1-mask) * MASK_TOKEN_IDX)
 
         # Forward
-        optimizer.zero_grad()
         if args.arch == 'bert':
             loss = model(input_ids=masked_sequences, labels=sequences)[0]
         else:
             raise NotImplementedError()
         
-        print(loss)
-
+        # Average loss gradients over all gradient accumulation steps.
+        loss = loss / float(args.grad_acc_steps)
+        
         # Backward
         loss.backward()
-        optimizer.step()
 
+        if i % args.grad_acc_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+        
         # Bookkeeping
         losses.update(loss.item(), sequences.size(0))
 
