@@ -36,11 +36,14 @@ parser.add_argument('--hidden-size', type=int, default=16)
 parser.add_argument('--num-layers', type=int, default=2)
 parser.add_argument('--num-attn-heads', type=int, default=8) # Only for BERT
 
-# Opt settings
+# Optimizer settings
 parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
 parser.add_argument('--epochs', type=int, default=10)
+
+# Loss settings
+parser.add_argument('--weight-loss', '-wl' type=int, default=1, help='downweights background by 1/w. default is does nothing')
 
 args = parser.parse_args()
 
@@ -105,10 +108,10 @@ def main():
     ####################################################################
 
     if args.targets == 'start' or args.targets == 'end':
-        softmax_dim = 2 
+        num_classes = 2 
     elif args.targets == 'both':
         # TODO: Make sure if this really is 4 or if it is only 3 in practice
-        softmax_dim = 4
+        num_classes = 4
     else:
         raise NotImplementedError()
 
@@ -133,7 +136,7 @@ def main():
         model = RNN(
             rnn=gru, 
             embedder=embedder,
-            output_size=softmax_dim
+            output_size=num_classes
         ).cuda()
     elif args.arch == 'bert':
         config = BertConfig(
@@ -151,7 +154,7 @@ def main():
             layer_norm_eps=1e-12, 
             pad_token_id=0, 
             gradient_checkpointing=False,
-            num_labels=softmax_dim
+            num_labels=num_classes
         )
 
         model = BertForTokenClassification(config=config).cuda()
@@ -160,7 +163,9 @@ def main():
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    lossfn = torch.nn.CrossEntropyLoss()
+    weight = torch.ones(num_classes)
+    weight[0] = weight[0] / args.weight_loss
+    lossfn = torch.nn.CrossEntropyLoss(weight=weight)
 
     print("Beginning training")
     for epoch in range(args.epochs):
