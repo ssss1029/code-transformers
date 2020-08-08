@@ -164,7 +164,7 @@ def load_binaries(binary_filenames, binary_format=None, chunk_length=1000, rever
         ends = [end for start, end in function_boundaries]
         both = set(starts).intersection(set(ends))
         if len(both) != 0:
-            logging.warning("Found a file witha function start and end on the same byte!")
+            logging.warning("Found a file with a function start and end on the same byte!")
             raise Exception()
 
         binaries.append((text, np.array(function_boundaries, dtype=np.int32), os.path.basename(fn)))

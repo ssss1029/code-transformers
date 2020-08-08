@@ -29,8 +29,8 @@ parser.add_argument('--savedir', type=str)
 
 # Model settings
 parser.add_argument('--sequence-len', type=int, default=1024, help='Length of sequence fed into transformer')
-parser.add_argument('--hidden-size', type=int, default=256)
-parser.add_argument('--num-layers', type=int, default=8)
+parser.add_argument('--hidden-size', type=int, default=16)
+parser.add_argument('--num-layers', type=int, default=2)
 
 # Opt settings
 parser.add_argument('--print-freq', type=int, default=100)
@@ -70,13 +70,20 @@ def prologue():
 
 
 class RNN(nn.Module):
-    def __init__(self, rnn, embedder):
+    def __init__(self, rnn, embedder, output_size):
         super(RNN, self).__init__()
         self.rnn = rnn
         self.embedder = embedder
+        self.output_size = output_size
+
+        # Project hidden states onto sofmax dimension
+        # 2 * hidden_size since bidirectional RNNs concat each direction for the final output
+        self.proj = nn.Linear(2 * self.rnn.hidden_size, self.output_size)
     
     def forward(self, x):
-        return self.rnn(self.embedder(x))
+        x = self.embedder(x)
+        x, _ = self.rnn(x)
+        return self.proj(x)
 
 
 def main():
@@ -119,7 +126,7 @@ def main():
 
     # Define model
     gru = torch.nn.GRU(
-        input_size=256,
+        input_size=args.hidden_size,
         hidden_size=args.hidden_size,
         num_layers=args.num_layers,
         bias=True,
@@ -132,7 +139,11 @@ def main():
         embedding_dim=args.hidden_size
     )
 
-    model = RNN(rnn=gru, embedder=embedder).cuda()
+    model = RNN(
+        rnn=gru, 
+        embedder=embedder,
+        output_size=softmax_dim
+    ).cuda()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
     lossfn = torch.nn.CrossEntropyLoss()
@@ -174,8 +185,8 @@ def train(model, lossfn, optimizer, dataloader, epoch):
 
         # Forward
         optimizer.zero_grad()
-        logits = model(sequences)[0]
-        logits = logits.permute(0, 2, 1)
+        logits = model(sequences)
+        logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
         loss = lossfn(logits, labels)
 
         # Backward

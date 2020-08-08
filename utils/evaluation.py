@@ -5,7 +5,7 @@ def calc_f1(logits, labels):
     """
     F1 Score 
 
-    logits: (batch_size, N, sequence_length), N is the sofmax dimension
+    logits: (batch_size, 2, sequence_length), 2 is the sofmax dimension
     labels: (batch_size, sequence_length)
     """
 
