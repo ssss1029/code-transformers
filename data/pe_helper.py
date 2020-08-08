@@ -44,6 +44,9 @@ def get_text(binary):
   raise RuntimeError('.text not found')
 
 def open(binary_path):
-  binary = pefile.PE(binary_path, fast_load=True)
-  binary.name = binary_path
-  return binary
+    try:
+        binary = pefile.PE(binary_path, fast_load=True)
+    except Exception as e:
+        return None
+    binary.name = binary_path
+    return binary
