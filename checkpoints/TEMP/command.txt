@@ -8,4 +8,5 @@
  'num_attn_heads': 8,
  'print_freq': 100,
  'savedir': 'checkpoints/TEMP/',
- 'sequence_len': 1024}
+ 'sequence_len': 1024,
+ 'targets': 'start'}
