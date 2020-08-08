@@ -17,7 +17,7 @@ python3 train.py \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*
 ```
 
-You can pass multiple `--dataroot`s to load binaries from even _more_ dirs
+You can pass multiple `--dataroot`s to load binaries from even more dirs
 ```
 python3 train.py \
     --savedir=checkpoints/TEMP/ \
