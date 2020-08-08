@@ -1,13 +1,14 @@
 
 """
 
-Transformer for Function ID tasks
+Transformers for Binary Analysis
 
 """
 
 import numpy as np
 import os
 import argparse
+import logging
 import pprint
 import time
 import torch
@@ -16,20 +17,27 @@ import torch.nn.functional as F
 from tqdm import tqdm
 
 from data.BinaryDataset import BinaryDataset
+from utils.evaluation import calc_f1
+from models.rnn import RNN
 
 from transformers import BertConfig, BertForTokenClassification, BertTokenizer
 
+import sklearn
+
 parser = argparse.ArgumentParser(description='Code Transformer', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
+parser.add_argument('--targets', type=str, choices=['start', 'end', 'both'], default='start')
 parser.add_argument('--savedir', type=str)
 
 # Model settings
+parser.add_argument('--arch', choices=['gru', 'bert'], required=True)
 parser.add_argument('--sequence-len', type=int, default=1024, help='Length of sequence fed into transformer')
-parser.add_argument('--hidden-size', type=int, default=256)
-parser.add_argument('--hidden-layers', type=int, default=8)
-parser.add_argument('--num-attn-heads', type=int, default=8)
+parser.add_argument('--hidden-size', type=int, default=16)
+parser.add_argument('--num-layers', type=int, default=2)
+parser.add_argument('--num-attn-heads', type=int, default=8) # Only for BERT
 
 # Opt settings
+parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
 parser.add_argument('--epochs', type=int, default=10)
@@ -77,7 +85,7 @@ def main():
         curr_dataset = BinaryDataset(
             root_dir=dataroot,
             binary_format='elf',
-            targets='start', 
+            targets=args.targets, 
             mode='random-chunks', 
             chunk_length=args.sequence_len
         )
@@ -96,42 +104,78 @@ def main():
     ## Model
     ####################################################################
 
-    config = BertConfig(
-        vocab_size=256, 
-        hidden_size=args.hidden_size, 
-        num_hidden_layers=args.hidden_layers, 
-        num_attention_heads=args.num_attn_heads, 
-        intermediate_size=args.hidden_size * 4, # BERT originally uses 4x hidden size for this, so copying that. 
-        hidden_act='gelu', 
-        hidden_dropout_prob=0.1, 
-        attention_probs_dropout_prob=0.1, 
-        max_position_embeddings=args.sequence_len, # Sequence length max 
-        type_vocab_size=1, 
-        initializer_range=0.02, 
-        layer_norm_eps=1e-12, 
-        pad_token_id=0, 
-        gradient_checkpointing=False
-    )
+    if args.targets == 'start' or args.targets == 'end':
+        softmax_dim = 2 
+    elif args.targets == 'both':
+        # TODO: Make sure if this really is 4 or if it is only 3 in practice
+        softmax_dim = 4
+    else:
+        raise NotImplementedError()
 
-    model = BertForTokenClassification(config=config).cuda()
-    # model = torch.nn.DataParallel(model, dim=0)
+    # Define model
+    # For now, embedding dimension = hidden dimension
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+    if args.arch == 'gru':
+        gru = torch.nn.GRU(
+            input_size=args.hidden_size,
+            hidden_size=args.hidden_size,
+            num_layers=args.num_layers,
+            bias=True,
+            batch_first=True,
+            bidirectional=True
+        )
+
+        embedder = torch.nn.Embedding(
+            num_embeddings=256,
+            embedding_dim=args.hidden_size
+        )
+
+        model = RNN(
+            rnn=gru, 
+            embedder=embedder,
+            output_size=softmax_dim
+        ).cuda()
+    elif args.arch == 'bert':
+        config = BertConfig(
+            vocab_size=256, 
+            hidden_size=args.hidden_size, 
+            num_hidden_layers=args.num_layers, 
+            num_attention_heads=args.num_attn_heads, 
+            intermediate_size=args.hidden_size * 4, # BERT originally uses 4x hidden size for this, so copying that. 
+            hidden_act='gelu', 
+            hidden_dropout_prob=0.1, 
+            attention_probs_dropout_prob=0.1, 
+            max_position_embeddings=args.sequence_len, # Sequence length max 
+            type_vocab_size=1, 
+            initializer_range=0.02, 
+            layer_norm_eps=1e-12, 
+            pad_token_id=0, 
+            gradient_checkpointing=False,
+            num_labels=softmax_dim
+        )
+
+        model = BertForTokenClassification(config=config).cuda()
+    else:
+        raise NotImplementedError()
+
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     lossfn = torch.nn.CrossEntropyLoss()
 
     print("Beginning training")
     for epoch in range(args.epochs):
-        train_loss, train_acc = train(
+        train_loss = train(
             model, lossfn, optimizer, dataloader, epoch
         )
 
-        print(f"Train Loss: {train_loss} | Test Loss: {test_loss} | Test Acc: {test_acc}")
+        print(f"Train Loss: {train_loss}")
         
         # torch.save(
         #     model.state_dict(),
         #     os.path.join(save_dir, "model.pth")
         # )
 
+        # TODO: Save results and model
 
 
 def train(model, lossfn, optimizer, dataloader, epoch):
@@ -155,8 +199,13 @@ def train(model, lossfn, optimizer, dataloader, epoch):
 
         # Forward
         optimizer.zero_grad()
-        logits = model(sequences)[0]
-        logits = logits.permute(0, 2, 1)
+        if args.arch == 'gru':
+            logits = model(sequences)
+        elif args.arch == 'bert':
+            logits = model(sequences)[0]
+        else:
+            raise NotImplementedError()
+        logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
         loss = lossfn(logits, labels)
 
         # Backward
@@ -171,6 +220,15 @@ def train(model, lossfn, optimizer, dataloader, epoch):
         end = time.time()
         
         if i % args.print_freq == 0:
+            # TODO: Maybe keep track of a moving average of F1 during training?
+            # if args.targets == 'start' or args.targets == 'end':
+            #     f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
+            #     print(f1_curr)
+            # else:
+            #     # TODO: Implement F1 for 'both' targets
+            #     raise NotImplementedError()
+            # print(logits.shape)
+            # print(logits[:5, :, :5])
             progress.display(i)
         
     return losses.avg

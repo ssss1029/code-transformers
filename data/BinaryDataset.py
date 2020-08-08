@@ -123,7 +123,7 @@ def load_binaries(binary_filenames, binary_format=None, chunk_length=1000, rever
     List [(text:bytes, boundaries:np.array(num_functions, 2), filename:str)]
     """
 
-    bin_helper = { 'pe': pe_helper, 'elf': elf_helper }#[binary_format]
+    bin_helpers = { 'pe': pe_helper, 'elf': elf_helper }#[binary_format]
     if binary_format is not None:
          bin_helper = bin_helpers[binary_format]
             
@@ -140,7 +140,7 @@ def load_binaries(binary_filenames, binary_format=None, chunk_length=1000, rever
                 logging.warning("unknown binary type")
         binary = bin_helper.open_binary(fn)
         if binary == None:
-            logging.warning("WARNING: Unable to open binary {fn}. Skipping this file.")
+            logging.warning(f"Unable to open binary {fn}. Skipping this file.")
             continue
         
         # text: bytes, text_offset: int
@@ -158,6 +158,14 @@ def load_binaries(binary_filenames, binary_format=None, chunk_length=1000, rever
         
         # Sort from smallest start value to largest
         function_boundaries.sort()
+
+        # Sanity checks
+        starts = [start for start, end in function_boundaries]
+        ends = [end for start, end in function_boundaries]
+        both = set(starts).intersection(set(ends))
+        if len(both) != 0:
+            logging.warning("Found a file with a function start and end on the same byte!")
+            raise Exception()
 
         binaries.append((text, np.array(function_boundaries, dtype=np.int32), os.path.basename(fn)))
     
