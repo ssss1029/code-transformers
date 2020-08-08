@@ -33,6 +33,7 @@ parser.add_argument('--hidden-size', type=int, default=16)
 parser.add_argument('--num-layers', type=int, default=2)
 
 # Opt settings
+parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
 parser.add_argument('--epochs', type=int, default=10)
@@ -145,7 +146,7 @@ def main():
         output_size=softmax_dim
     ).cuda()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     lossfn = torch.nn.CrossEntropyLoss()
 
     print("Beginning training")
