@@ -91,7 +91,7 @@ def main():
         curr_dataset = BinaryDataset(
             root_dir=dataroot,
             binary_format='elf',
-            targets='start', # Anything works here. We discard the labels anyway.
+            targets='none', # Anything works here. We discard the labels anyway.
             mode='random-chunks', 
             chunk_length=args.sequence_len
         )

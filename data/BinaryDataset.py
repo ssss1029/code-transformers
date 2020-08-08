@@ -53,6 +53,9 @@ class BinaryDataset(torch.utils.data.Dataset):
         elif targets == 'start':
             self.output_function_starts = True
             self.output_function_ends = False
+        elif targets == 'none':
+            self.output_function_starts = False
+            self.output_function_ends = False
         else:
             raise NotImplementedError(f"Targets {targets} not recognized")
         
