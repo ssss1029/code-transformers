@@ -1,3 +1,11 @@
 {'FILENAME': 'train.py',
- 'dataroot': '/var/tmp/sauravkadavath/binary/byteweight/elf_32/1/binary',
- 'savedir': 'checkpoints/TEMP/'}
+ 'batch_size': 8,
+ 'dataroot': ['/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/*',
+              '/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/*'],
+ 'epochs': 10,
+ 'hidden_layers': 8,
+ 'hidden_size': 256,
+ 'num_attn_heads': 8,
+ 'print_freq': 100,
+ 'savedir': 'checkpoints/TEMP/',
+ 'sequence_len': 1024}

@@ -114,7 +114,7 @@ class BinaryDataset(torch.utils.data.Dataset):
         # cw = np.ones(length)
         # return {'x': X, 'y': Y, 'cw': cw}
 
-        return {'X': X, 'y': y}
+        return {'X': torch.tensor(X), 'y': torch.tensor(y)}
 
 def load_binaries(binary_filenames, binary_format, chunk_length, reverse=True):
     """
