@@ -109,11 +109,9 @@ def main():
     ## Model
     ####################################################################
 
-    if args.targets == 'start':
-        softmax_dim = 2
-    elif args.targets == 'end':
+    if args.targets == 'start' or args.targets == 'end':
         softmax_dim = 2 
-    elif args.target == 'both':
+    elif args.targets == 'both':
         # TODO: Make sure if this really is 4 or if it is only 3 in practice
         softmax_dim = 4
     else:
