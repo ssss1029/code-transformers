@@ -139,6 +139,9 @@ def main():
     model = torch.nn.DataParallel(model).cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    with open(os.path.join(args.savedir, "training_log.csv"), 'w') as f:
+        f.write("epoch,train_loss\n")
+
     print("Beginning training")
     for epoch in range(args.epochs):
         train_loss = train(
@@ -147,10 +150,10 @@ def main():
 
         print(f"Train Loss: {train_loss}")
         
-        # torch.save(
-        #     model.state_dict(),
-        #     os.path.join(save_dir, "model.pth")
-        # )
+        model.module.save_pretrained(os.path.join(args.savedir, "weights")),
+
+        with open(os.path.join(args.savedir, "training_log.csv"), 'a') as f:
+            f.write(f"{epoch},{train_loss}\n")
 
         # TODO: Save results and model
 
@@ -176,11 +179,12 @@ def train(model, optimizer, dataloader, epoch):
 
         # Mask
         mask = torch.lt(torch.rand(sequences.shape).cuda(), 1 - args.mask_frac).long() # 0 at places to mask, 1 everywhere else
-        masked_sequences = (mask * sequences) + ((1-mask) * MASK_TOKEN_IDX)
+        masked_sequences = (mask * sequences) + ((1-mask) * MASK_TOKEN_IDX) # Replace all 0s in the mask with MASK_TOKEN_IDX
+        masked_labels = ((1-mask) * sequences) + (mask * -100) # Replace all 0s in the mask with -100
 
         # Forward
         if args.arch == 'bert':
-            loss = model(input_ids=masked_sequences, labels=sequences)[0]
+            loss = model(input_ids=masked_sequences, labels=masked_labels)[0]
         else:
             raise NotImplementedError()
         
