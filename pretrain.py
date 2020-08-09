@@ -180,7 +180,7 @@ def train(model, optimizer, dataloader, epoch):
         # Mask
         mask = torch.lt(torch.rand(sequences.shape).cuda(), 1 - args.mask_frac).long() # 0 at places to mask, 1 everywhere else
         masked_sequences = (mask * sequences) + ((1-mask) * MASK_TOKEN_IDX) # Replace all 0s in the mask with MASK_TOKEN_IDX
-        masked_labels = ((1-mask) * sequences) + (mask * -100) # Replace all 0s in the mask with -100
+        masked_labels = ((1-mask) * sequences) + (mask * -100) # Replace all 1s in the mask with -100
 
         # Forward
         if args.arch == 'bert':
