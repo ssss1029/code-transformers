@@ -132,11 +132,11 @@ def main():
             num_labels=256
         )
 
-        model = BertForMaskedLM(config=config).cuda()
+        model = BertForMaskedLM(config=config)
     else:
         raise NotImplementedError()
 
-
+    model = torch.nn.DataParallel(model).cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     print("Beginning training")
@@ -185,7 +185,7 @@ def train(model, optimizer, dataloader, epoch):
             raise NotImplementedError()
         
         # Average loss gradients over all gradient accumulation steps.
-        loss = loss / float(args.grad_acc_steps)
+        loss = loss.mean() / float(args.grad_acc_steps)
         
         # Backward
         loss.backward()
