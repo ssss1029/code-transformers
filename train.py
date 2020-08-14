@@ -43,7 +43,7 @@ parser.add_argument('--batch-size', type=int, default=4)
 parser.add_argument('--epochs', type=int, default=10)
 
 # Loss settings
-parser.add_argument('--weight-loss', '-wl' type=int, default=1, help='downweights background by 1/w. default is does nothing')
+parser.add_argument('--weight-loss', '-wl', type=int, default=1, help='downweights background by 1/w. default is does nothing')
 
 args = parser.parse_args()
 
@@ -163,7 +163,7 @@ def main():
 
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    weight = torch.ones(num_classes)
+    weight = torch.ones(num_classes).cuda()
     weight[0] = weight[0] / args.weight_loss
     lossfn = torch.nn.CrossEntropyLoss(weight=weight)
 
