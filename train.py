@@ -37,6 +37,7 @@ parser.add_argument('--num-layers', type=int, default=2)
 parser.add_argument('--num-attn-heads', type=int, default=8) # Only for BERT
 
 # Optimizer settings
+parser.add_argument('--optimizer', choices=['rmsprop', 'adam'], default='adam', type=str)
 parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
@@ -112,7 +113,7 @@ def main():
     print("Dataset len() = {0}".format(len(dataset)))
 
     dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True
+        dataset, batch_size=args.batch_size, shuffle=True, num_workers=10
     )
 
 
@@ -233,6 +234,8 @@ def train(model, optimizer, dataloader, epoch, num_classes):
             weight = torch.ones(num_classes).cuda()
             weight[0] = weight[0] / args.weight_loss
 
+        # print(weight)
+
         logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
         loss = torch.nn.functional.cross_entropy(logits, labels, weight)
 
@@ -249,14 +252,14 @@ def train(model, optimizer, dataloader, epoch, num_classes):
         
         if i % args.print_freq == 0:
             # TODO: Maybe keep track of a moving average of F1 during training?
-            # if args.targets == 'start' or args.targets == 'end':
-            #     f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
-            #     print(f1_curr)
-            # else:
-            #     # TODO: Implement F1 for 'both' targets
-            #     raise NotImplementedError()
-            # print(logits.shape)
-            # print(logits[:5, :, :5])
+            if args.targets == 'start' or args.targets == 'end':
+                f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
+                print(f1_curr)
+            else:
+                # TODO: Implement F1 for 'both' targets
+                raise NotImplementedError()
+            print(logits.shape)
+            print(logits[:5, :, :5])
             progress.display(i)
         
     return losses.avg
