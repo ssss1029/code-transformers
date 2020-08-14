@@ -1,7 +1,7 @@
 {'FILENAME': 'pretrain.py',
  'arch': 'bert',
  'batch_size': 64,
- 'dataroot': ['/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/*'],
+ 'dataroot': ['/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*'],
  'epochs': 100,
  'grad_acc_steps': 10,
  'hidden_size': 16,
