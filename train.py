@@ -44,14 +44,27 @@ parser.add_argument('--epochs', type=int, default=10)
 
 # Loss settings
 parser.add_argument('--weight-loss', '-wl', type=int, default=1, help='downweights background by 1/w. default is does nothing')
+parser.add_argument('--weight-loss-rcf', action='store_true', help='Weights losses according to eq. 1 and 2 from https://arxiv.org/pdf/1612.02103.pdf')
 
 args = parser.parse_args()
 
+def check_args():
+    """
+    Sanity checks on arguments
+    """
+
+    if args.weight_loss != 1.0 and args.weight_loss_rcf == True:
+        raise Exception("Either choose manual weight loss or RCF weight loss, not both")
+    
+    return True
 
 def prologue():
     """
     Bookkeeping stuff
     """
+
+    check_args()
+
     if os.path.exists(args.savedir):
         resp = "None"
         while resp.lower() not in {'y', 'n'}:
@@ -161,16 +174,12 @@ def main():
     else:
         raise NotImplementedError()
 
-
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    weight = torch.ones(num_classes).cuda()
-    weight[0] = weight[0] / args.weight_loss
-    lossfn = torch.nn.CrossEntropyLoss(weight=weight)
 
     print("Beginning training")
     for epoch in range(args.epochs):
         train_loss = train(
-            model, lossfn, optimizer, dataloader, epoch
+            model, optimizer, dataloader, epoch, num_classes
         )
 
         print(f"Train Loss: {train_loss}")
@@ -183,7 +192,7 @@ def main():
         # TODO: Save results and model
 
 
-def train(model, lossfn, optimizer, dataloader, epoch):
+def train(model, optimizer, dataloader, epoch, num_classes):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -210,8 +219,22 @@ def train(model, lossfn, optimizer, dataloader, epoch):
             logits = model(sequences)[0]
         else:
             raise NotImplementedError()
+        
+        if args.weight_loss_rcf == True:
+            num_background = torch.sum(labels == 0).item()
+            num_foreground = torch.sum(labels != 0).item()
+            weight_background = num_foreground / (num_foreground + num_background)
+            weight_foreground = num_background / (num_foreground + num_background)
+            
+            weight = torch.ones(num_classes).cuda() * weight_foreground
+            weight[0] = weight_background
+        else:
+            # Default to manual --weight-loss
+            weight = torch.ones(num_classes).cuda()
+            weight[0] = weight[0] / args.weight_loss
+
         logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
-        loss = lossfn(logits, labels)
+        loss = torch.nn.functional.cross_entropy(logits, labels, weight)
 
         # Backward
         loss.backward()
