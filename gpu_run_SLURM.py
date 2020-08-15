@@ -31,49 +31,50 @@ class Config:
         --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
         --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
         --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/* \
+        --val-dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/* \
     "
 
     SLURM_HEADER = "srun --pty -p gpu_jsteinhardt -w shadowfax -c 4 --gres=gpu:1"
 
     # Specifies tasks to run. It maps tmux session name to the command to run in that session.
     JOBS = {
-        "gru_rmsprop_lr1e-4_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_rmsprop_lr1e-4_noSchedule \
+        "gru_elf64_rmsprop_lr1e-4_noSchedule" : "python3 train.py \
+            --savedir=checkpoints/gru_elf64_rmsprop_lr1e-4_noSchedule \
             --optimizer=rmsprop \
             --lr=1e-4 \
             --lr-scheduler=none \
             ",
 
-        "gru_rmsprop_lr3e-3_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_rmsprop_lr3e-3_noSchedule \
+        "gru_elf64_rmsprop_lr3e-3_noSchedule" : "python3 train.py \
+            --savedir=checkpoints/gru_elf64_rmsprop_lr3e-3_noSchedule \
             --optimizer=rmsprop \
             --lr=3e-3 \
             --lr-scheduler=none \
             ",
 
-        "gru_rmsprop_lr1e-3_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_rmsprop_lr1e-3_noSchedule \
+        "gru_elf64_rmsprop_lr1e-3_noSchedule" : "python3 train.py \
+            --savedir=checkpoints/gru_elf64_rmsprop_lr1e-3_noSchedule \
             --optimizer=rmsprop \
             --lr=1e-3 \
             --lr-scheduler=none \
             ",
 
-        "gru_adam_lr3e-5_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_adam_lr3e-5_noSchedule \
+        "gru_elf64_adam_lr3e-5_noSchedule" : "python3 train.py \
+            --savedir=checkpoints/gru_elf64_adam_lr3e-5_noSchedule \
             --optimizer=adam \
             --lr=3e-5 \
             --lr-scheduler=none \
             ",
 
-        "gru_adam_lr1e-5_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_adam_lr1e-5_noSchedule \
+        "gru_elf64_adam_lr1e-5_noSchedule" : "python3 train.py \
+            --savedir=checkpoints/gru_elf64_adam_lr1e-5_noSchedule \
             --optimizer=adam \
             --lr=1e-5 \
             --lr-scheduler=none \
             ",
         
-        "gru_adam_lr1e-6_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_adam_lr1e-6_noSchedule \
+        "gru_elf64_adam_lr1e-6_noSchedule" : "python3 train.py \
+            --savedir=checkpoints/gru_elf64_adam_lr1e-6_noSchedule \
             --optimizer=adam \
             --lr=1e-6 \
             --lr-scheduler=none \

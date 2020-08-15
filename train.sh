@@ -23,3 +23,4 @@ srun --pty -p gpu_jsteinhardt -w shadowfax -c 10 --gres=gpu:1 python3 train.py \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/* \
+    --val-dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/* \

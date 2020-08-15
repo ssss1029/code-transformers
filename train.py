@@ -24,11 +24,15 @@ from transformers import BertConfig, BertForTokenClassification, BertTokenizer
 
 import sklearn
 
+# TODO: Make this a command line arg
+logging.basicConfig(level = logging.DEBUG)
+
 parser = argparse.ArgumentParser(description='Code Transformer', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
 parser.add_argument('--val-dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
 parser.add_argument('--targets', type=str, choices=['start', 'end', 'both'], default='start')
 parser.add_argument('--savedir', type=str)
+parser.add_argument('--test', action='store_true', help="Add --test to only do validation and exit.")
 
 # Model settings
 parser.add_argument('--arch', choices=['gru', 'bert'], required=True)
@@ -86,7 +90,7 @@ def prologue():
         if not os.path.isdir(args.savedir):
             raise Exception('%s is not a dir' % args.savedir)
         else:
-            print("Made save directory", args.savedir)
+            logging.info("Made save directory", args.savedir)
 
     with open(os.path.join(args.savedir, 'command.txt'), 'w') as f:
         to_print = vars(args)
@@ -111,12 +115,27 @@ def main():
         )
         all_datasets.append(curr_dataset)
 
-    # TODO: ConcatDataset. This requires the __len__() to be implemented.
     train_data = torch.utils.data.ConcatDataset(all_datasets)
-    print("Dataset len() = {0}".format(len(train_data)))
-
+    logging.info("Train dataset len() = {0}".format(len(train_data)))
     train_loader = torch.utils.data.DataLoader(
         train_data, batch_size=args.batch_size, shuffle=True, num_workers=2
+    )
+
+    val_datasets = []
+    for dataroot in args.val_dataroot:
+        curr_dataset = BinaryDataset(
+            root_dir=dataroot,
+            binary_format='elf',
+            targets=args.targets, 
+            mode='random-chunks', 
+            chunk_length=args.sequence_len
+        )
+        val_datasets.append(curr_dataset)
+    
+    val_data = torch.utils.data.ConcatDataset(val_datasets)
+    logging.info("Validation dataset len() = {0}".format(len(val_data)))
+    val_loader = torch.utils.data.DataLoader(
+        val_data, batch_size=args.batch_size, shuffle=True, num_workers=2
     )
 
 
@@ -205,12 +224,18 @@ def main():
         raise NotImplementedError()
 
     with open(os.path.join(args.savedir, 'training_log.csv'), 'w') as f:
-        f.write('epoch,train_loss,train_f1_average\n')
+        f.write('epoch,train_loss,train_f1_average,val_loss,val_f1_average\n')
     
-    print("Beginning training")
+    logging.info("Beginning training")
     for epoch in range(args.epochs):
         train_loss_avg, train_f1_avg = train(
             model, optimizer, scheduler, train_loader, epoch, num_classes
+        )
+
+
+
+        val_loss_avg, val_f1_avg = validate(
+            model, val_loader, num_classes
         )
         
         # torch.save(
@@ -221,9 +246,62 @@ def main():
         # TODO: Save results and model
 
         with open(os.path.join(args.savedir, 'training_log.csv'), 'a') as f:
-            f.write('%03d,%0.5f,%0.5f\n' % (
-                (epoch + 1), train_loss_avg, train_f1_avg
+            f.write('%03d,%0.5f,%0.5f,%0.5f,%0.5f\n' % (
+                (epoch + 1), train_loss_avg, train_f1_avg, val_loss_avg, val_f1_avg
             ))
+
+def validate(model, test_loader, num_classes):
+    losses = AverageMeter('Loss', ':.4e')
+    f1 = AverageMeter('F1', ':.4e')
+
+    model.eval()
+    end = time.time()
+
+    with torch.no_grad():
+        for i, batch in enumerate(tqdm(test_loader)):
+            sequences = batch['X'].to(torch.int64).cuda() # batch_size x sequence_len
+            labels    = batch['y'].to(torch.int64).cuda() # batch_size x sequence_len
+
+            # Forward
+            if args.arch == 'gru':
+                logits = model(sequences)
+            elif args.arch == 'bert':
+                logits = model(sequences)[0]
+            else:
+                raise NotImplementedError()
+            
+            if args.weight_loss_rcf == True:
+                num_background = torch.sum(labels == 0).item()
+                num_foreground = torch.sum(labels != 0).item()
+                weight_background = num_foreground / (num_foreground + num_background)
+                weight_foreground = num_background / (num_foreground + num_background)
+                
+                weight = torch.ones(num_classes).cuda() * weight_foreground
+                weight[0] = weight_background
+            else:
+                # Default to manual --weight-loss
+                weight = torch.ones(num_classes).cuda()
+                weight[0] = weight[0] / args.weight_loss
+
+            # logging.info(weight)
+
+            logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
+            loss = torch.nn.functional.cross_entropy(logits, labels, weight)
+            
+            # Bookkeeping
+            losses.update(loss.item(), sequences.size(0))
+            
+            # TODO: Maybe keep track of a moving average of F1 during training?
+            if args.targets == 'start' or args.targets == 'end':
+                f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
+                f1.update(f1_curr, sequences.size(0))
+            else:
+                # TODO: Implement F1 for 'both' targets
+                raise NotImplementedError()
+        
+    return losses.avg, f1.avg
+
+
 
 
 def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
@@ -268,7 +346,7 @@ def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
             weight = torch.ones(num_classes).cuda()
             weight[0] = weight[0] / args.weight_loss
 
-        # print(weight)
+        # logging.info(weight)
 
         logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
         loss = torch.nn.functional.cross_entropy(logits, labels, weight)
@@ -286,18 +364,20 @@ def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
         batch_time.update(time.time() - end)
         end = time.time()
         
+        # TODO: Maybe keep track of a moving average of F1 during training?
+        if args.targets == 'start' or args.targets == 'end':
+            f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
+            f1.update(f1_curr, sequences.size(0))
+        else:
+            # TODO: Implement F1 for 'both' targets
+            raise NotImplementedError()
+
         if i % args.print_freq == 0:
-            # TODO: Maybe keep track of a moving average of F1 during training?
-            if args.targets == 'start' or args.targets == 'end':
-                f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
-                f1.update(f1_curr, sequences.size(0))
-            else:
-                # TODO: Implement F1 for 'both' targets
-                raise NotImplementedError()
             # print(logits.shape) # torch.Size([batch_size, N_classes, seq_len])
-            print(logits[:2, :, :7])
+            # print(logits[:2, :, :7])
             progress.display(i)
         
+        return 0, 0
     return losses.avg, f1.avg
 
 
