@@ -1,0 +1,2 @@
+epoch,train_loss,train_f1_average,val_loss,val_f1_average
+001,0.01131,0.73966,0.00175,0.91046
