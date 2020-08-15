@@ -377,7 +377,6 @@ def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
             # print(logits[:2, :, :7])
             progress.display(i)
         
-        return 0, 0
     return losses.avg, f1.avg
 
 
