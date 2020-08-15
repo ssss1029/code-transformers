@@ -26,6 +26,7 @@ import sklearn
 
 parser = argparse.ArgumentParser(description='Code Transformer', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
+parser.add_argument('--val-dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
 parser.add_argument('--targets', type=str, choices=['start', 'end', 'both'], default='start')
 parser.add_argument('--savedir', type=str)
 
@@ -41,7 +42,8 @@ parser.add_argument('--optimizer', choices=['rmsprop', 'adam'], default='adam', 
 parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
-parser.add_argument('--epochs', type=int, default=10)
+parser.add_argument('--epochs', type=int, default=30)
+parser.add_argument('--lr-scheduler', type=str, choices=['none', 'cosine'], default='none')
 
 # Loss settings
 parser.add_argument('--weight-loss', '-wl', type=int, default=1, help='downweights background by 1/w. default is does nothing')
@@ -58,6 +60,7 @@ def check_args():
         raise Exception("Either choose manual weight loss or RCF weight loss, not both")
     
     return True
+
 
 def prologue():
     """
@@ -109,11 +112,11 @@ def main():
         all_datasets.append(curr_dataset)
 
     # TODO: ConcatDataset. This requires the __len__() to be implemented.
-    dataset = torch.utils.data.ConcatDataset(all_datasets)
-    print("Dataset len() = {0}".format(len(dataset)))
+    train_data = torch.utils.data.ConcatDataset(all_datasets)
+    print("Dataset len() = {0}".format(len(train_data)))
 
-    dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True, num_workers=10
+    train_loader = torch.utils.data.DataLoader(
+        train_data, batch_size=args.batch_size, shuffle=True, num_workers=2
     )
 
 
@@ -175,15 +178,40 @@ def main():
     else:
         raise NotImplementedError()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    if args.optimizer == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.optimizer == 'rmsprop':
+        optimizer = torch.optim.RMSprop(model.parameters(), lr=args.lr, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
+    else:
+        raise NotImplementedError()
 
+    if args.lr_scheduler == 'cosine':
+        def cosine_annealing(step, total_steps, lr_max, lr_min):
+                return lr_min + (lr_max - lr_min) * 0.5 * (
+                        1 + np.cos(step / total_steps * np.pi))
+
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=lambda step: cosine_annealing(
+                step,
+                args.epochs * len(train_loader),
+                1,  # since lr_lambda computes multiplicative factor
+                1e-6 / (args.lr * args.batch_size / 256.)
+            )
+        )
+    elif args.lr_scheduler == 'none':
+        scheduler = None
+    else:
+        raise NotImplementedError()
+
+    with open(os.path.join(args.savedir, 'training_log.csv'), 'w') as f:
+        f.write('epoch,train_loss,train_f1_average\n')
+    
     print("Beginning training")
     for epoch in range(args.epochs):
-        train_loss = train(
-            model, optimizer, dataloader, epoch, num_classes
+        train_loss_avg, train_f1_avg = train(
+            model, optimizer, scheduler, train_loader, epoch, num_classes
         )
-
-        print(f"Train Loss: {train_loss}")
         
         # torch.save(
         #     model.state_dict(),
@@ -192,20 +220,26 @@ def main():
 
         # TODO: Save results and model
 
+        with open(os.path.join(args.savedir, 'training_log.csv'), 'a') as f:
+            f.write('%03d,%0.5f,%0.5f\n' % (
+                (epoch + 1), train_loss_avg, train_f1_avg
+            ))
 
-def train(model, optimizer, dataloader, epoch, num_classes):
+
+def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
+    f1 = AverageMeter('F1', ':.4e')
     progress = ProgressMeter(
-        len(dataloader),
-        [batch_time, data_time, losses],
+        len(train_loader),
+        [batch_time, data_time, losses, f1],
         prefix="Epoch: [{}]".format(epoch)
     )
 
     model.train()
     end = time.time()
-    for i, batch in enumerate(dataloader):
+    for i, batch in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
@@ -242,6 +276,8 @@ def train(model, optimizer, dataloader, epoch, num_classes):
         # Backward
         loss.backward()
         optimizer.step()
+        if scheduler != None:
+            scheduler.step()
 
         # Bookkeeping
         losses.update(loss.item(), sequences.size(0))
@@ -254,15 +290,15 @@ def train(model, optimizer, dataloader, epoch, num_classes):
             # TODO: Maybe keep track of a moving average of F1 during training?
             if args.targets == 'start' or args.targets == 'end':
                 f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
-                print(f1_curr)
+                f1.update(f1_curr, sequences.size(0))
             else:
                 # TODO: Implement F1 for 'both' targets
                 raise NotImplementedError()
-            print(logits.shape)
-            print(logits[:5, :, :5])
+            # print(logits.shape) # torch.Size([batch_size, N_classes, seq_len])
+            print(logits[:2, :, :7])
             progress.display(i)
         
-    return losses.avg
+    return losses.avg, f1.avg
 
 
 

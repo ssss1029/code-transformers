@@ -4,14 +4,17 @@
 # Train GRU
 ########################################
 
-CUDA_VISIBLE_DEVICES=7 python3 train.py \
-    --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
+srun --pty -p gpu_jsteinhardt -w shadowfax -c 10 --gres=gpu:1 python3 train.py \
     --target=start \
-    --savedir=checkpoints/TEMP \
     --arch=gru \
     --weight-loss-rcf \
-    --batch-size=128 \
+    --batch-size=256 \
     --sequence-len=2048 \
+    --savedir=checkpoints/TEMP_2 \
+    --optimizer=rmsprop \
+    --lr=1e-4 \
+    --lr-scheduler=none \
+    --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/3/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/4/binary/* \
