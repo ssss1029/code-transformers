@@ -38,45 +38,17 @@ class Config:
 
     # Specifies tasks to run. It maps tmux session name to the command to run in that session.
     JOBS = {
-        "gru_elf64_rmsprop_lr1e-4_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_elf64_rmsprop_lr1e-4_noSchedule \
-            --optimizer=rmsprop \
-            --lr=1e-4 \
+        "gru_elf64_adam_lr3e-4_noSchedule" : "python3 train.py \
+            --savedir=checkpoints/gru_elf64_adam_lr3e-4_noSchedule \
+            --optimizer=adam \
+            --lr=3e-4 \
             --lr-scheduler=none \
             ",
 
-        "gru_elf64_rmsprop_lr3e-3_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_elf64_rmsprop_lr3e-3_noSchedule \
-            --optimizer=rmsprop \
-            --lr=3e-3 \
-            --lr-scheduler=none \
-            ",
-
-        "gru_elf64_rmsprop_lr1e-3_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_elf64_rmsprop_lr1e-3_noSchedule \
-            --optimizer=rmsprop \
+        "gru_elf64_adam_lr1e-3_noSchedule" : "python3 train.py \
+            --savedir=checkpoints/gru_elf64_adam_lr1e-3_noSchedule \
+            --optimizer=adam \
             --lr=1e-3 \
-            --lr-scheduler=none \
-            ",
-
-        "gru_elf64_adam_lr3e-5_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_elf64_adam_lr3e-5_noSchedule \
-            --optimizer=adam \
-            --lr=3e-5 \
-            --lr-scheduler=none \
-            ",
-
-        "gru_elf64_adam_lr1e-5_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_elf64_adam_lr1e-5_noSchedule \
-            --optimizer=adam \
-            --lr=1e-5 \
-            --lr-scheduler=none \
-            ",
-        
-        "gru_elf64_adam_lr1e-6_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_elf64_adam_lr1e-6_noSchedule \
-            --optimizer=adam \
-            --lr=1e-6 \
             --lr-scheduler=none \
             ",
     }
