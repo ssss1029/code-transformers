@@ -3,5 +3,6 @@
 **/__pycache__/*
 
 checkpoints/TEMP/*
+checkpoints/TEMP_*/*
 checkpoints/*/model.pth
 checkpoints/*/weights/pytorch_model.bin

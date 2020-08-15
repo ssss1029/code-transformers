@@ -24,10 +24,15 @@ from transformers import BertConfig, BertForTokenClassification, BertTokenizer
 
 import sklearn
 
+# TODO: Make this a command line arg
+logging.basicConfig(level = logging.DEBUG)
+
 parser = argparse.ArgumentParser(description='Code Transformer', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
+parser.add_argument('--val-dataroot', type=str, action='append', help="Add multiple dataroots in glob format (e.g. '/var/tmp/sauravkadavath/binary/byteweight/elf_64/*/binary/*')")
 parser.add_argument('--targets', type=str, choices=['start', 'end', 'both'], default='start')
 parser.add_argument('--savedir', type=str)
+parser.add_argument('--test', action='store_true', help="Add --test to only do validation and exit.")
 
 # Model settings
 parser.add_argument('--arch', choices=['gru', 'bert'], required=True)
@@ -37,21 +42,37 @@ parser.add_argument('--num-layers', type=int, default=2)
 parser.add_argument('--num-attn-heads', type=int, default=8) # Only for BERT
 
 # Optimizer settings
+parser.add_argument('--optimizer', choices=['rmsprop', 'adam'], default='adam', type=str)
 parser.add_argument('--lr', type=float, default=1e-5)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
-parser.add_argument('--epochs', type=int, default=10)
+parser.add_argument('--epochs', type=int, default=30)
+parser.add_argument('--lr-scheduler', type=str, choices=['none', 'cosine'], default='none')
 
 # Loss settings
 parser.add_argument('--weight-loss', '-wl', type=int, default=1, help='downweights background by 1/w. default is does nothing')
+parser.add_argument('--weight-loss-rcf', action='store_true', help='Weights losses according to eq. 1 and 2 from https://arxiv.org/pdf/1612.02103.pdf')
 
 args = parser.parse_args()
+
+def check_args():
+    """
+    Sanity checks on arguments
+    """
+
+    if args.weight_loss != 1.0 and args.weight_loss_rcf == True:
+        raise Exception("Either choose manual weight loss or RCF weight loss, not both")
+    
+    return True
 
 
 def prologue():
     """
     Bookkeeping stuff
     """
+
+    check_args()
+
     if os.path.exists(args.savedir):
         resp = "None"
         while resp.lower() not in {'y', 'n'}:
@@ -69,7 +90,7 @@ def prologue():
         if not os.path.isdir(args.savedir):
             raise Exception('%s is not a dir' % args.savedir)
         else:
-            print("Made save directory", args.savedir)
+            logging.info("Made save directory", args.savedir)
 
     with open(os.path.join(args.savedir, 'command.txt'), 'w') as f:
         to_print = vars(args)
@@ -94,12 +115,27 @@ def main():
         )
         all_datasets.append(curr_dataset)
 
-    # TODO: ConcatDataset. This requires the __len__() to be implemented.
-    dataset = torch.utils.data.ConcatDataset(all_datasets)
-    print("Dataset len() = {0}".format(len(dataset)))
+    train_data = torch.utils.data.ConcatDataset(all_datasets)
+    logging.info("Train dataset len() = {0}".format(len(train_data)))
+    train_loader = torch.utils.data.DataLoader(
+        train_data, batch_size=args.batch_size, shuffle=True, num_workers=2
+    )
 
-    dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True
+    val_datasets = []
+    for dataroot in args.val_dataroot:
+        curr_dataset = BinaryDataset(
+            root_dir=dataroot,
+            binary_format='elf',
+            targets=args.targets, 
+            mode='random-chunks', 
+            chunk_length=args.sequence_len
+        )
+        val_datasets.append(curr_dataset)
+    
+    val_data = torch.utils.data.ConcatDataset(val_datasets)
+    logging.info("Validation dataset len() = {0}".format(len(val_data)))
+    val_loader = torch.utils.data.DataLoader(
+        val_data, batch_size=args.batch_size, shuffle=True, num_workers=2
     )
 
 
@@ -161,19 +197,46 @@ def main():
     else:
         raise NotImplementedError()
 
+    if args.optimizer == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.optimizer == 'rmsprop':
+        optimizer = torch.optim.RMSprop(model.parameters(), lr=args.lr, alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
+    else:
+        raise NotImplementedError()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    weight = torch.ones(num_classes).cuda()
-    weight[0] = weight[0] / args.weight_loss
-    lossfn = torch.nn.CrossEntropyLoss(weight=weight)
+    if args.lr_scheduler == 'cosine':
+        def cosine_annealing(step, total_steps, lr_max, lr_min):
+                return lr_min + (lr_max - lr_min) * 0.5 * (
+                        1 + np.cos(step / total_steps * np.pi))
 
-    print("Beginning training")
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=lambda step: cosine_annealing(
+                step,
+                args.epochs * len(train_loader),
+                1,  # since lr_lambda computes multiplicative factor
+                1e-6 / (args.lr * args.batch_size / 256.)
+            )
+        )
+    elif args.lr_scheduler == 'none':
+        scheduler = None
+    else:
+        raise NotImplementedError()
+
+    with open(os.path.join(args.savedir, 'training_log.csv'), 'w') as f:
+        f.write('epoch,train_loss,train_f1_average,val_loss,val_f1_average\n')
+    
+    logging.info("Beginning training")
     for epoch in range(args.epochs):
-        train_loss = train(
-            model, lossfn, optimizer, dataloader, epoch
+        train_loss_avg, train_f1_avg = train(
+            model, optimizer, scheduler, train_loader, epoch, num_classes
         )
 
-        print(f"Train Loss: {train_loss}")
+
+
+        val_loss_avg, val_f1_avg = validate(
+            model, val_loader, num_classes
+        )
         
         # torch.save(
         #     model.state_dict(),
@@ -182,20 +245,79 @@ def main():
 
         # TODO: Save results and model
 
+        with open(os.path.join(args.savedir, 'training_log.csv'), 'a') as f:
+            f.write('%03d,%0.5f,%0.5f,%0.5f,%0.5f\n' % (
+                (epoch + 1), train_loss_avg, train_f1_avg, val_loss_avg, val_f1_avg
+            ))
 
-def train(model, lossfn, optimizer, dataloader, epoch):
+def validate(model, test_loader, num_classes):
+    losses = AverageMeter('Loss', ':.4e')
+    f1 = AverageMeter('F1', ':.4e')
+
+    model.eval()
+    end = time.time()
+
+    with torch.no_grad():
+        for i, batch in enumerate(tqdm(test_loader)):
+            sequences = batch['X'].to(torch.int64).cuda() # batch_size x sequence_len
+            labels    = batch['y'].to(torch.int64).cuda() # batch_size x sequence_len
+
+            # Forward
+            if args.arch == 'gru':
+                logits = model(sequences)
+            elif args.arch == 'bert':
+                logits = model(sequences)[0]
+            else:
+                raise NotImplementedError()
+            
+            if args.weight_loss_rcf == True:
+                num_background = torch.sum(labels == 0).item()
+                num_foreground = torch.sum(labels != 0).item()
+                weight_background = num_foreground / (num_foreground + num_background)
+                weight_foreground = num_background / (num_foreground + num_background)
+                
+                weight = torch.ones(num_classes).cuda() * weight_foreground
+                weight[0] = weight_background
+            else:
+                # Default to manual --weight-loss
+                weight = torch.ones(num_classes).cuda()
+                weight[0] = weight[0] / args.weight_loss
+
+            # logging.info(weight)
+
+            logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
+            loss = torch.nn.functional.cross_entropy(logits, labels, weight)
+            
+            # Bookkeeping
+            losses.update(loss.item(), sequences.size(0))
+            
+            # TODO: Maybe keep track of a moving average of F1 during training?
+            if args.targets == 'start' or args.targets == 'end':
+                f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
+                f1.update(f1_curr, sequences.size(0))
+            else:
+                # TODO: Implement F1 for 'both' targets
+                raise NotImplementedError()
+        
+    return losses.avg, f1.avg
+
+
+
+
+def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
+    f1 = AverageMeter('F1', ':.4e')
     progress = ProgressMeter(
-        len(dataloader),
-        [batch_time, data_time, losses],
+        len(train_loader),
+        [batch_time, data_time, losses, f1],
         prefix="Epoch: [{}]".format(epoch)
     )
 
     model.train()
     end = time.time()
-    for i, batch in enumerate(dataloader):
+    for i, batch in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
@@ -210,12 +332,30 @@ def train(model, lossfn, optimizer, dataloader, epoch):
             logits = model(sequences)[0]
         else:
             raise NotImplementedError()
+        
+        if args.weight_loss_rcf == True:
+            num_background = torch.sum(labels == 0).item()
+            num_foreground = torch.sum(labels != 0).item()
+            weight_background = num_foreground / (num_foreground + num_background)
+            weight_foreground = num_background / (num_foreground + num_background)
+            
+            weight = torch.ones(num_classes).cuda() * weight_foreground
+            weight[0] = weight_background
+        else:
+            # Default to manual --weight-loss
+            weight = torch.ones(num_classes).cuda()
+            weight[0] = weight[0] / args.weight_loss
+
+        # logging.info(weight)
+
         logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
-        loss = lossfn(logits, labels)
+        loss = torch.nn.functional.cross_entropy(logits, labels, weight)
 
         # Backward
         loss.backward()
         optimizer.step()
+        if scheduler != None:
+            scheduler.step()
 
         # Bookkeeping
         losses.update(loss.item(), sequences.size(0))
@@ -224,19 +364,20 @@ def train(model, lossfn, optimizer, dataloader, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         
+        # TODO: Maybe keep track of a moving average of F1 during training?
+        if args.targets == 'start' or args.targets == 'end':
+            f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
+            f1.update(f1_curr, sequences.size(0))
+        else:
+            # TODO: Implement F1 for 'both' targets
+            raise NotImplementedError()
+
         if i % args.print_freq == 0:
-            # TODO: Maybe keep track of a moving average of F1 during training?
-            # if args.targets == 'start' or args.targets == 'end':
-            #     f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
-            #     print(f1_curr)
-            # else:
-            #     # TODO: Implement F1 for 'both' targets
-            #     raise NotImplementedError()
-            # print(logits.shape)
-            # print(logits[:5, :, :5])
+            # print(logits.shape) # torch.Size([batch_size, N_classes, seq_len])
+            # print(logits[:2, :, :7])
             progress.display(i)
         
-    return losses.avg
+    return losses.avg, f1.avg
 
 
 
