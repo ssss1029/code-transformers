@@ -232,8 +232,6 @@ def main():
             model, optimizer, scheduler, train_loader, epoch, num_classes
         )
 
-
-
         val_loss_avg, val_f1_avg = validate(
             model, val_loader, num_classes
         )

@@ -14,6 +14,8 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from tqdm import tqdm
 
 from data.BinaryDataset import BinaryDataset
@@ -45,8 +47,16 @@ parser.add_argument('--grad-acc-steps', type=int, default=1, help="Number of bac
 # MLM settings
 parser.add_argument('--mask-frac', type=float, default=0.15, help="Fraction of tokens to mask out before doing MLM")
 
+# Distributed Training settings
+parser.add_argument('--master-addr', type=str, default='localhost')
+parser.add_argument('--master-port', type=str, default='12345')
+parser.add_argument('--world-size', type=int, default=1, help="Total # of machines, NOT GPUs")
+
 
 args = parser.parse_args()
+
+ngpus_per_node = torch.cuda.device_count()
+args.world_size = ngpus_per_node * args.world_size
 
 MASK_TOKEN_IDX = 256
 
@@ -80,8 +90,15 @@ def prologue():
         pprint.pprint(to_print, stream=f)
 
 
-def main():
+def run(rank, ngpus_per_node):
+    print(f"world_size  = {args.world_size}")
     
+    os.environ['MASTER_ADDR'] = args.master_addr
+    os.environ['MASTER_PORT'] = args.master_port
+
+    # initialize the process group
+    dist.init_process_group("nccl", rank=rank, world_size=args.world_size)
+
     ####################################################################
     ## Data
     ####################################################################
@@ -100,9 +117,15 @@ def main():
     # TODO: ConcatDataset. This requires the __len__() to be implemented.
     dataset = torch.utils.data.ConcatDataset(all_datasets)
     print("Dataset len() = {0}".format(len(dataset)))
+    
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+    	dataset,
+    	num_replicas=args.world_size,
+    	rank=rank
+    )
 
     dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True
+        dataset, batch_size=args.batch_size, sampler=train_sampler
     )
 
 
@@ -136,7 +159,8 @@ def main():
     else:
         raise NotImplementedError()
 
-    model = torch.nn.DataParallel(model).cuda()
+    model = model.to(rank)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], find_unused_parameters=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
     with open(os.path.join(args.savedir, "training_log.csv"), 'w') as f:
@@ -261,6 +285,13 @@ class ProgressMeter(object):
         fmt = '{:' + str(num_digits) + 'd}'
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
+
+def main():
+    global args
+
+    # Use torch.multiprocessing.spawn to launch distributed processes: the
+    # run process function
+    mp.spawn(run, nprocs=ngpus_per_node, args=(ngpus_per_node, ))
 
 if __name__ == "__main__":
     prologue()
