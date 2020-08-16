@@ -39,6 +39,8 @@ parser.add_argument('--num-attn-heads', type=int, default=8) # Only for BERT
 
 # Optimizer settings
 parser.add_argument('--lr', type=float, default=1e-5)
+parser.add_argument('--multistep-milestone', action='append', type=int)
+parser.add_argument('--multistep-gamma', type=float, default=0.2)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
 parser.add_argument('--epochs', type=int, default=10)
@@ -162,6 +164,7 @@ def run(rank, ngpus_per_node):
     model = model.to(rank)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], find_unused_parameters=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.multistep_milestone, gamma=args.multistep_gamma)
 
     with open(os.path.join(args.savedir, "training_log.csv"), 'w') as f:
         f.write("epoch,train_loss\n")
@@ -171,6 +174,7 @@ def run(rank, ngpus_per_node):
         train_loss = train(
             model, optimizer, dataloader, epoch
         )
+        scheduler.step()
 
         print(f"Train Loss: {train_loss}")
         
