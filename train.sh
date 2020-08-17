@@ -33,16 +33,19 @@
 srun --pty -p gpu_jsteinhardt -w shadowfax -c 10 --gres=gpu:4 python3 train.py \
     --target=start \
     --arch=bert \
-    --weight-loss-rcf \
-    --batch-size=32 \
     --sequence-len=1024 \
-    --savedir=checkpoints/TEMP_2 \
+    --hidden-size=16 \
+    --num-layers=4 \
+    --num-attn-heads=8 \
     --optimizer=adam \
     --lr=3e-4 \
     --lr-scheduler=none \
+    --batch-size=16 \
+    --grad-acc-steps=10 \
+    --weight-loss-rcf \
+    --savedir=checkpoints/TEMP_2 \
     --val-dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
-    --load-pretrained=checkpoints/pretrain_bert_elf64_all/weights/ \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/3/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/4/binary/* \
@@ -51,6 +54,7 @@ srun --pty -p gpu_jsteinhardt -w shadowfax -c 10 --gres=gpu:4 python3 train.py \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/* \
+    # --load-pretrained=checkpoints/pretrain_bert_elf64_all/weights/ \
 
 
 
