@@ -16,41 +16,85 @@ class Config:
     """
     
     # Shared args to put onto all of the JOBS
-    SHARED_ARGS = " \
-        --target=start \
-        --arch=gru \
-        --weight-loss-rcf \
-        --batch-size=256 \
-        --sequence-len=2048 \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/* \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/3/binary/* \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/4/binary/* \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/5/binary/* \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/6/binary/* \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
-        --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/* \
-        --val-dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/* \
-    "
+    SHARED_ARGS = " "
 
-    SLURM_HEADER = "srun --pty -p gpu_jsteinhardt -w shadowfax -c 4 --gres=gpu:1"
+    SLURM_HEADER = "srun --pty -p gpu_jsteinhardt -w shadowfax -c 15 --gres=gpu:4"
 
     # Specifies tasks to run. It maps tmux session name to the command to run in that session.
     JOBS = {
-        "gru_elf64_adam_lr3e-4_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_elf64_adam_lr3e-4_noSchedule \
-            --optimizer=adam \
-            --lr=3e-4 \
-            --lr-scheduler=none \
-            ",
+        # "pretrain_bert_elf64_all" : " python3 pretrain.py \
+        #     --arch=bert \
+        #     --savedir=checkpoints/pretrain_bert_elf64_all \
+        #     --sequence-len=1024 \
+        #     --batch-size=24 \
+        #     --epochs=30 \
+        #     --lr=1e-3 \
+        #     --multistep-milestone=2 \
+        #     --multistep-milestone=5 \
+        #     --multistep-milestone=10 \
+        #     --multistep-milestone=15 \
+        #     --multistep-milestone=20 \
+        #     --multistep-milestone=25 \
+        #     --multistep-gamma=0.2 \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/3/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/4/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/5/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/6/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/*"
 
-        "gru_elf64_adam_lr1e-3_noSchedule" : "python3 train.py \
-            --savedir=checkpoints/gru_elf64_adam_lr1e-3_noSchedule \
+        "tune_bert_elf64_lr3e-5" : "python3 train.py \
+            --target=start \
+            --arch=bert \
+            --weight-loss-rcf \
+            --batch-size=32 \
+            --sequence-len=1024 \
+            --savedir=checkpoints/tune_bert_elf64_lr3e-5 \
             --optimizer=adam \
-            --lr=1e-3 \
+            --lr=3e-5 \
+            --epochs=100 \
             --lr-scheduler=none \
-            ",
+            --grad-acc-steps=10 \
+            --val-dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
+            --load-pretrained=checkpoints/pretrain_bert_elf64_all/weights/ \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/3/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/4/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/5/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/6/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/*",
+        
+        "tune_bert_elf64_lr1e-4" : "python3 train.py \
+            --master-port=12346 \
+            --target=start \
+            --arch=bert \
+            --weight-loss-rcf \
+            --batch-size=32 \
+            --sequence-len=1024 \
+            --savedir=checkpoints/tune_bert_elf64_lr1e-4 \
+            --optimizer=adam \
+            --lr=1e-4 \
+            --epochs=100 \
+            --lr-scheduler=none \
+            --grad-acc-steps=10 \
+            --val-dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
+            --load-pretrained=checkpoints/pretrain_bert_elf64_all/weights/ \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/3/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/4/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/5/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/6/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/*"
     }
 
     # Time to wait between putting jobs on GPUs (in seconds). This is useful because it might take time 

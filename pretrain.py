@@ -93,7 +93,8 @@ def prologue():
 
 
 def run(rank, ngpus_per_node):
-    print(f"world_size  = {args.world_size}")
+    if rank == 0:
+        print(f"world_size  = {args.world_size}")
     
     os.environ['MASTER_ADDR'] = args.master_addr
     os.environ['MASTER_PORT'] = args.master_port
@@ -118,7 +119,8 @@ def run(rank, ngpus_per_node):
 
     # TODO: ConcatDataset. This requires the __len__() to be implemented.
     dataset = torch.utils.data.ConcatDataset(all_datasets)
-    print("Dataset len() = {0}".format(len(dataset)))
+    if rank == 0:
+        print("Dataset len() = {0}".format(len(dataset)))
     
     train_sampler = torch.utils.data.distributed.DistributedSampler(
     	dataset,
@@ -172,21 +174,20 @@ def run(rank, ngpus_per_node):
     print("Beginning training")
     for epoch in range(args.epochs):
         train_loss = train(
-            model, optimizer, dataloader, epoch
+            model, optimizer, dataloader, epoch, rank
         )
         scheduler.step()
 
-        print(f"Train Loss: {train_loss}")
+        print(optimizer.param_groups[0]["lr"])
         
-        model.module.save_pretrained(os.path.join(args.savedir, "weights")),
+        # Save model and results
+        model.module.save_pretrained(os.path.join(args.savedir, "weights"))
 
         with open(os.path.join(args.savedir, "training_log.csv"), 'a') as f:
             f.write(f"{epoch},{train_loss}\n")
 
-        # TODO: Save results and model
 
-
-def train(model, optimizer, dataloader, epoch):
+def train(model, optimizer, dataloader, epoch, rank):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -233,16 +234,7 @@ def train(model, optimizer, dataloader, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         
-        if i % args.print_freq == 0:
-            # TODO: Maybe keep track of a moving average of F1 during training?
-            # if args.targets == 'start' or args.targets == 'end':
-            #     f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
-            #     print(f1_curr)
-            # else:
-            #     # TODO: Implement F1 for 'both' targets
-            #     raise NotImplementedError()
-            # print(logits.shape)
-            # print(logits[:5, :, :5])
+        if i % args.print_freq == 0 and rank == 0:
             progress.display(i)
         
     return losses.avg
