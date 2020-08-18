@@ -109,6 +109,7 @@ def prologue():
         to_print = vars(args)
         to_print['FILENAME'] = __file__
         pprint.pprint(to_print, stream=f)
+        logging.info(pprint.pprint(to_print))
 
 
 def run(rank, ngpus_per_node):
@@ -291,7 +292,7 @@ def run(rank, ngpus_per_node):
                 os.path.join(save_dir, "model.pth")
             )
         elif args.arch == 'bert':
-            pass
+            model.module.save_pretrained(os.path.join(args.savedir, "weights"))
         else:
             raise NotImplementedError()
 

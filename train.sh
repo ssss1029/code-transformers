@@ -34,13 +34,13 @@ srun --pty -p gpu_jsteinhardt -w shadowfax -c 10 --gres=gpu:4 python3 train.py \
     --target=start \
     --arch=bert \
     --sequence-len=1024 \
-    --hidden-size=16 \
+    --hidden-size=256 \
     --num-layers=4 \
-    --num-attn-heads=8 \
+    --num-attn-heads=16 \
     --optimizer=adam \
     --lr=3e-4 \
     --lr-scheduler=none \
-    --batch-size=16 \
+    --batch-size=8 \
     --grad-acc-steps=10 \
     --weight-loss-rcf \
     --savedir=checkpoints/TEMP_2 \

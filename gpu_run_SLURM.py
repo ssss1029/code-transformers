@@ -47,22 +47,25 @@ class Config:
         #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/* \
         #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/*"
 
-        "tune_bert_elf64_lr1e-5" : "python3 train.py \
+        "tune_bert_elf64_lr3e-4_CONTINUE" : "python3 train.py \
             --master-port=12346 \
             --target=start \
             --arch=bert \
-            --weight-loss-rcf \
-            --batch-size=32 \
             --sequence-len=1024 \
-            --savedir=checkpoints/tune_bert_elf64_lr1e-5 \
+            --hidden-size=256 \
+            --num-layers=4 \
+            --num-attn-heads=16 \
             --optimizer=adam \
-            --lr=1e-5 \
-            --epochs=100 \
+            --lr=3e-4 \
             --lr-scheduler=none \
+            --batch-size=8 \
+            --epochs=100 \
             --grad-acc-steps=10 \
+            --weight-loss-rcf \
+            --savedir=checkpoints/tune_bert_elf64_lr3e-4_CONTINUE \
+            --load-pretrained=checkpoints/tune_bert_elf64_lr3e-4/weights \
             --val-dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/* \
             --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
-            --load-pretrained=checkpoints/pretrain_bert_elf64_all/weights/ \
             --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/* \
             --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/3/binary/* \
             --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/4/binary/* \
@@ -70,7 +73,35 @@ class Config:
             --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/6/binary/* \
             --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
             --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
-            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/*"
+            --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/*",
+        
+        # "tune_bert_elf64_lr1e-3" : "python3 train.py \
+        #     --master-port=12346 \
+        #     --target=start \
+        #     --arch=bert \
+        #     --sequence-len=1024 \
+        #     --hidden-size=256 \
+        #     --num-layers=4 \
+        #     --num-attn-heads=16 \
+        #     --optimizer=adam \
+        #     --lr=1e-3 \
+        #     --lr-scheduler=none \
+        #     --batch-size=8 \
+        #     --epochs=100 \
+        #     --grad-acc-steps=10 \
+        #     --weight-loss-rcf \
+        #     --savedir=checkpoints/tune_bert_elf64_lr1e-3 \
+        #     --load-pretrained=checkpoints/tune_bert_elf64_lr3e-4/weights \
+        #     --val-dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/10/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/1/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/2/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/3/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/4/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/5/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/6/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/7/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/8/binary/* \
+        #     --dataroot=/var/tmp/sauravkadavath/binary/byteweight/elf_64/9/binary/*"
     }
 
     # Time to wait between putting jobs on GPUs (in seconds). This is useful because it might take time 
