@@ -14,6 +14,8 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from tqdm import tqdm
 
 from data.BinaryDataset import BinaryDataset
@@ -40,6 +42,7 @@ parser.add_argument('--sequence-len', type=int, default=1024, help='Length of se
 parser.add_argument('--hidden-size', type=int, default=16)
 parser.add_argument('--num-layers', type=int, default=2)
 parser.add_argument('--num-attn-heads', type=int, default=8) # Only for BERT
+parser.add_argument('--load-pretrained', type=str, default=None)
 
 # Optimizer settings
 parser.add_argument('--optimizer', choices=['rmsprop', 'adam'], default='adam', type=str)
@@ -48,12 +51,22 @@ parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
 parser.add_argument('--epochs', type=int, default=30)
 parser.add_argument('--lr-scheduler', type=str, choices=['none', 'cosine'], default='none')
+parser.add_argument('--grad-acc-steps', type=int, default=1, help="Number of backward()s to call before calling one step()")
 
 # Loss settings
 parser.add_argument('--weight-loss', '-wl', type=int, default=1, help='downweights background by 1/w. default is does nothing')
 parser.add_argument('--weight-loss-rcf', action='store_true', help='Weights losses according to eq. 1 and 2 from https://arxiv.org/pdf/1612.02103.pdf')
 
+# Distributed Training settings
+parser.add_argument('--master-addr', type=str, default='localhost')
+parser.add_argument('--master-port', type=str, default='12345')
+parser.add_argument('--world-size', type=int, default=1, help="Total # of machines, NOT GPUs")
+
 args = parser.parse_args()
+
+ngpus_per_node = torch.cuda.device_count()
+args.world_size = ngpus_per_node * args.world_size
+
 
 def check_args():
     """
@@ -96,9 +109,19 @@ def prologue():
         to_print = vars(args)
         to_print['FILENAME'] = __file__
         pprint.pprint(to_print, stream=f)
+        logging.info(pprint.pprint(to_print))
 
 
-def main():
+def run(rank, ngpus_per_node):
+    if rank == 0:
+        print(f"world_size  = {args.world_size}")
+    
+    os.environ['MASTER_ADDR'] = args.master_addr
+    os.environ['MASTER_PORT'] = args.master_port
+
+    # initialize the process group
+    dist.init_process_group("nccl", rank=rank, world_size=args.world_size)
+
     
     ####################################################################
     ## Data
@@ -117,8 +140,13 @@ def main():
 
     train_data = torch.utils.data.ConcatDataset(all_datasets)
     logging.info("Train dataset len() = {0}".format(len(train_data)))
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+    	train_data,
+    	num_replicas=args.world_size,
+    	rank=rank
+    )
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=args.batch_size, shuffle=True, num_workers=2
+        train_data, batch_size=args.batch_size, sampler=train_sampler, num_workers=2
     )
 
     val_datasets = []
@@ -155,47 +183,62 @@ def main():
     # For now, embedding dimension = hidden dimension
 
     if args.arch == 'gru':
-        gru = torch.nn.GRU(
-            input_size=args.hidden_size,
-            hidden_size=args.hidden_size,
-            num_layers=args.num_layers,
-            bias=True,
-            batch_first=True,
-            bidirectional=True
-        )
+        if args.load_pretrained != None:
+            raise NotImplementedError()
+        else:
+            gru = torch.nn.GRU(
+                input_size=args.hidden_size,
+                hidden_size=args.hidden_size,
+                num_layers=args.num_layers,
+                bias=True,
+                batch_first=True,
+                bidirectional=True
+            )
 
-        embedder = torch.nn.Embedding(
-            num_embeddings=256,
-            embedding_dim=args.hidden_size
-        )
+            embedder = torch.nn.Embedding(
+                num_embeddings=256,
+                embedding_dim=args.hidden_size
+            )
 
-        model = RNN(
-            rnn=gru, 
-            embedder=embedder,
-            output_size=num_classes
-        ).cuda()
+            model = RNN(
+                rnn=gru, 
+                embedder=embedder,
+                output_size=num_classes
+            ).to(rank)
+
     elif args.arch == 'bert':
-        config = BertConfig(
-            vocab_size=256, 
-            hidden_size=args.hidden_size, 
-            num_hidden_layers=args.num_layers, 
-            num_attention_heads=args.num_attn_heads, 
-            intermediate_size=args.hidden_size * 4, # BERT originally uses 4x hidden size for this, so copying that. 
-            hidden_act='gelu', 
-            hidden_dropout_prob=0.1, 
-            attention_probs_dropout_prob=0.1, 
-            max_position_embeddings=args.sequence_len, # Sequence length max 
-            type_vocab_size=1, 
-            initializer_range=0.02, 
-            layer_norm_eps=1e-12, 
-            pad_token_id=0, 
-            gradient_checkpointing=False,
-            num_labels=num_classes
-        )
+        if args.load_pretrained != None:
+            logging.info(f"Loading BERT from {args.load_pretrained}")
+            model = BertForTokenClassification.from_pretrained(
+                args.load_pretrained,
+                num_labels=num_classes,
+                max_position_embeddings=args.sequence_len
+            ).to(rank)
+        else:
+            config = BertConfig(
+                vocab_size=256,
+                hidden_size=args.hidden_size, 
+                num_hidden_layers=args.num_layers, 
+                num_attention_heads=args.num_attn_heads, 
+                intermediate_size=args.hidden_size * 4, # BERT originally uses 4x hidden size for this, so copying that. 
+                hidden_act='gelu', 
+                hidden_dropout_prob=0.1, 
+                attention_probs_dropout_prob=0.1, 
+                max_position_embeddings=args.sequence_len, # Sequence length max 
+                type_vocab_size=1, 
+                initializer_range=0.02, 
+                layer_norm_eps=1e-12, 
+                pad_token_id=0, 
+                gradient_checkpointing=False,
+                num_labels=num_classes
+            )
 
-        model = BertForTokenClassification(config=config).cuda()
+            model = BertForTokenClassification(config=config).to(rank)
     else:
         raise NotImplementedError()
+
+    # DDP
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], find_unused_parameters=True)
 
     if args.optimizer == 'adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -229,28 +272,32 @@ def main():
     logging.info("Beginning training")
     for epoch in range(args.epochs):
         train_loss_avg, train_f1_avg = train(
-            model, optimizer, scheduler, train_loader, epoch, num_classes
+            model, optimizer, scheduler, train_loader, epoch, num_classes, rank
         )
-
-
 
         val_loss_avg, val_f1_avg = validate(
-            model, val_loader, num_classes
+            model, val_loader, num_classes, rank
         )
+
+        # Save training log and model.
         
-        # torch.save(
-        #     model.state_dict(),
-        #     os.path.join(save_dir, "model.pth")
-        # )
-
-        # TODO: Save results and model
-
         with open(os.path.join(args.savedir, 'training_log.csv'), 'a') as f:
             f.write('%03d,%0.5f,%0.5f,%0.5f,%0.5f\n' % (
                 (epoch + 1), train_loss_avg, train_f1_avg, val_loss_avg, val_f1_avg
             ))
+        
+        if args.arch == 'gru':
+            torch.save(
+                model.state_dict(),
+                os.path.join(save_dir, "model.pth")
+            )
+        elif args.arch == 'bert':
+            model.module.save_pretrained(os.path.join(args.savedir, "weights"))
+        else:
+            raise NotImplementedError()
 
-def validate(model, test_loader, num_classes):
+
+def validate(model, test_loader, num_classes, rank):
     losses = AverageMeter('Loss', ':.4e')
     f1 = AverageMeter('F1', ':.4e')
 
@@ -259,8 +306,8 @@ def validate(model, test_loader, num_classes):
 
     with torch.no_grad():
         for i, batch in enumerate(tqdm(test_loader)):
-            sequences = batch['X'].to(torch.int64).cuda() # batch_size x sequence_len
-            labels    = batch['y'].to(torch.int64).cuda() # batch_size x sequence_len
+            sequences = batch['X'].to(torch.int64) # batch_size x sequence_len
+            labels    = batch['y'].to(torch.int64).to(rank) # batch_size x sequence_len
 
             # Forward
             if args.arch == 'gru':
@@ -276,12 +323,14 @@ def validate(model, test_loader, num_classes):
                 weight_background = num_foreground / (num_foreground + num_background)
                 weight_foreground = num_background / (num_foreground + num_background)
                 
-                weight = torch.ones(num_classes).cuda() * weight_foreground
+                weight = torch.ones(num_classes) * weight_foreground
                 weight[0] = weight_background
             else:
                 # Default to manual --weight-loss
-                weight = torch.ones(num_classes).cuda()
+                weight = torch.ones(num_classes)
                 weight[0] = weight[0] / args.weight_loss
+            
+            weight = weight.to(rank)
 
             # logging.info(weight)
 
@@ -302,9 +351,7 @@ def validate(model, test_loader, num_classes):
     return losses.avg, f1.avg
 
 
-
-
-def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
+def train(model, optimizer, scheduler, train_loader, epoch, num_classes, rank):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -321,11 +368,11 @@ def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
         # measure data loading time
         data_time.update(time.time() - end)
 
-        sequences = batch['X'].to(torch.int64).cuda() # batch_size x sequence_len
-        labels    = batch['y'].to(torch.int64).cuda() # batch_size x sequence_len
+        sequences = batch['X'].to(torch.int64) # batch_size x sequence_len
+        labels    = batch['y'].to(torch.int64).to(rank) # batch_size x sequence_len
 
         # Forward
-        optimizer.zero_grad()
+        # import pdb; pdb.set_trace()
         if args.arch == 'gru':
             logits = model(sequences)
         elif args.arch == 'bert':
@@ -339,21 +386,27 @@ def train(model, optimizer, scheduler, train_loader, epoch, num_classes):
             weight_background = num_foreground / (num_foreground + num_background)
             weight_foreground = num_background / (num_foreground + num_background)
             
-            weight = torch.ones(num_classes).cuda() * weight_foreground
+            weight = torch.ones(num_classes) * weight_foreground
             weight[0] = weight_background
         else:
             # Default to manual --weight-loss
-            weight = torch.ones(num_classes).cuda()
+            weight = torch.ones(num_classes)
             weight[0] = weight[0] / args.weight_loss
 
         # logging.info(weight)
+        weight = weight.to(rank)
 
         logits = logits.permute(0, 2, 1) # torch.Size([batch_size, N, sequence_len]); N = softmax dim
         loss = torch.nn.functional.cross_entropy(logits, labels, weight)
 
+        loss = loss / float(args.grad_acc_steps)
+
         # Backward
         loss.backward()
-        optimizer.step()
+        if i % args.grad_acc_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+
         if scheduler != None:
             scheduler.step()
 
@@ -421,6 +474,13 @@ class ProgressMeter(object):
         fmt = '{:' + str(num_digits) + 'd}'
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
+
+def main():
+    global args
+
+    # Use torch.multiprocessing.spawn to launch distributed processes: the
+    # run process function
+    mp.spawn(run, nprocs=ngpus_per_node, args=(ngpus_per_node, ))
 
 if __name__ == "__main__":
     prologue()

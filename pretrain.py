@@ -14,6 +14,8 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributed as dist
+import torch.multiprocessing as mp
 from tqdm import tqdm
 
 from data.BinaryDataset import BinaryDataset
@@ -37,6 +39,8 @@ parser.add_argument('--num-attn-heads', type=int, default=8) # Only for BERT
 
 # Optimizer settings
 parser.add_argument('--lr', type=float, default=1e-5)
+parser.add_argument('--multistep-milestone', action='append', type=int)
+parser.add_argument('--multistep-gamma', type=float, default=0.2)
 parser.add_argument('--print-freq', type=int, default=100)
 parser.add_argument('--batch-size', type=int, default=4)
 parser.add_argument('--epochs', type=int, default=10)
@@ -45,8 +49,16 @@ parser.add_argument('--grad-acc-steps', type=int, default=1, help="Number of bac
 # MLM settings
 parser.add_argument('--mask-frac', type=float, default=0.15, help="Fraction of tokens to mask out before doing MLM")
 
+# Distributed Training settings
+parser.add_argument('--master-addr', type=str, default='localhost')
+parser.add_argument('--master-port', type=str, default='12345')
+parser.add_argument('--world-size', type=int, default=1, help="Total # of machines, NOT GPUs")
+
 
 args = parser.parse_args()
+
+ngpus_per_node = torch.cuda.device_count()
+args.world_size = ngpus_per_node * args.world_size
 
 MASK_TOKEN_IDX = 256
 
@@ -80,8 +92,16 @@ def prologue():
         pprint.pprint(to_print, stream=f)
 
 
-def main():
+def run(rank, ngpus_per_node):
+    if rank == 0:
+        print(f"world_size  = {args.world_size}")
     
+    os.environ['MASTER_ADDR'] = args.master_addr
+    os.environ['MASTER_PORT'] = args.master_port
+
+    # initialize the process group
+    dist.init_process_group("nccl", rank=rank, world_size=args.world_size)
+
     ####################################################################
     ## Data
     ####################################################################
@@ -99,10 +119,17 @@ def main():
 
     # TODO: ConcatDataset. This requires the __len__() to be implemented.
     dataset = torch.utils.data.ConcatDataset(all_datasets)
-    print("Dataset len() = {0}".format(len(dataset)))
+    if rank == 0:
+        print("Dataset len() = {0}".format(len(dataset)))
+    
+    train_sampler = torch.utils.data.distributed.DistributedSampler(
+    	dataset,
+    	num_replicas=args.world_size,
+    	rank=rank
+    )
 
     dataloader = torch.utils.data.DataLoader(
-        dataset, batch_size=args.batch_size, shuffle=True
+        dataset, batch_size=args.batch_size, sampler=train_sampler
     )
 
 
@@ -136,8 +163,10 @@ def main():
     else:
         raise NotImplementedError()
 
-    model = torch.nn.DataParallel(model).cuda()
+    model = model.to(rank)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank], find_unused_parameters=True)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=args.multistep_milestone, gamma=args.multistep_gamma)
 
     with open(os.path.join(args.savedir, "training_log.csv"), 'w') as f:
         f.write("epoch,train_loss\n")
@@ -145,20 +174,20 @@ def main():
     print("Beginning training")
     for epoch in range(args.epochs):
         train_loss = train(
-            model, optimizer, dataloader, epoch
+            model, optimizer, dataloader, epoch, rank
         )
+        scheduler.step()
 
-        print(f"Train Loss: {train_loss}")
+        print(optimizer.param_groups[0]["lr"])
         
-        model.module.save_pretrained(os.path.join(args.savedir, "weights")),
+        # Save model and results
+        model.module.save_pretrained(os.path.join(args.savedir, "weights"))
 
         with open(os.path.join(args.savedir, "training_log.csv"), 'a') as f:
             f.write(f"{epoch},{train_loss}\n")
 
-        # TODO: Save results and model
 
-
-def train(model, optimizer, dataloader, epoch):
+def train(model, optimizer, dataloader, epoch, rank):
     batch_time = AverageMeter('Time', ':6.3f')
     data_time = AverageMeter('Data', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
@@ -205,16 +234,7 @@ def train(model, optimizer, dataloader, epoch):
         batch_time.update(time.time() - end)
         end = time.time()
         
-        if i % args.print_freq == 0:
-            # TODO: Maybe keep track of a moving average of F1 during training?
-            # if args.targets == 'start' or args.targets == 'end':
-            #     f1_curr = calc_f1(logits.detach().cpu(), labels.detach().cpu())
-            #     print(f1_curr)
-            # else:
-            #     # TODO: Implement F1 for 'both' targets
-            #     raise NotImplementedError()
-            # print(logits.shape)
-            # print(logits[:5, :, :5])
+        if i % args.print_freq == 0 and rank == 0:
             progress.display(i)
         
     return losses.avg
@@ -261,6 +281,13 @@ class ProgressMeter(object):
         fmt = '{:' + str(num_digits) + 'd}'
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
+
+def main():
+    global args
+
+    # Use torch.multiprocessing.spawn to launch distributed processes: the
+    # run process function
+    mp.spawn(run, nprocs=ngpus_per_node, args=(ngpus_per_node, ))
 
 if __name__ == "__main__":
     prologue()
